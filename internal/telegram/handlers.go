@@ -19,7 +19,7 @@ func (b *Bot) handleMessage(ctx context.Context, msg *telego.Message) {
 	}
 	text := strings.TrimSpace(msg.Text)
 	if strings.HasPrefix(text, "/") {
-		_ = b.store.DeleteDialogState(ctx, msg.Chat.ID)
+		_ = b.repo.DeleteDialogState(ctx, msg.Chat.ID)
 		b.handleCommand(ctx, msg, text)
 		return
 	}
@@ -45,13 +45,15 @@ func (b *Bot) handleCommand(ctx context.Context, msg *telego.Message, text strin
 		b.cmdRemove(ctx, msg, arg)
 	case "/on", "/off":
 		b.cmdToggle(ctx, msg, cmd, arg)
+	case "/settings":
+		b.cmdSettings(ctx, msg)
 	default:
 		b.cmdHelp(ctx, msg)
 	}
 }
 
 func (b *Bot) cmdStart(ctx context.Context, msg *telego.Message) {
-	err := b.store.CreateUser(ctx, userFromMessage(msg))
+	err := b.repo.CreateUser(ctx, userFromMessage(msg))
 	if err != nil {
 		b.log.Error("create user", "error", err)
 	}
@@ -59,11 +61,20 @@ func (b *Bot) cmdStart(ctx context.Context, msg *telego.Message) {
 }
 
 func (b *Bot) cmdHelp(ctx context.Context, msg *telego.Message) {
-	b.send(ctx, msg.Chat.ID, "Команды:\n/add — добавить правило\n/list — мои правила\n/edit — изменить правило\n/remove <id> — удалить правило\n/on <id> / /off <id> — включить/выключить правило\n/help — справка")
+	b.send(ctx, msg.Chat.ID, "Команды:\n/add — добавить правило\n/list — мои правила\n/edit — изменить правило\n/remove <id> — удалить правило\n/on <id> / /off <id> — включить/выключить правило\n/settings — настройки бота\n/help — справка\n\nВ запросе можно исключать слова: macbook -neo")
+}
+
+func (b *Bot) cmdSettings(ctx context.Context, msg *telego.Message) {
+	text := fmt.Sprintf("Интервал парсинга: %s\nПауза между запросами: %s\nЛимит на правило: %d\nМагазины: %s",
+		b.cfg.ParseInterval, b.cfg.ParseJitter, b.cfg.ParseLimit, strings.Join(b.stores, ", "))
+	if len(b.stores) == 0 {
+		text = "Магазины не подключены."
+	}
+	b.send(ctx, msg.Chat.ID, text)
 }
 
 func (b *Bot) cmdList(ctx context.Context, msg *telego.Message) {
-	rules, err := b.store.ListRulesByUser(ctx, msg.From.ID)
+	rules, err := b.repo.ListRulesByUser(ctx, msg.From.ID)
 	if err != nil {
 		b.log.Error("list rules", "error", err)
 		b.send(ctx, msg.Chat.ID, "Ошибка при чтении правил.")
@@ -90,7 +101,7 @@ func (b *Bot) cmdRemove(ctx context.Context, msg *telego.Message, arg string) {
 		b.send(ctx, msg.Chat.ID, "Использование: /remove <id>")
 		return
 	}
-	if err := b.store.DeleteRule(ctx, id, msg.From.ID); err != nil {
+	if err := b.repo.DeleteRule(ctx, id, msg.From.ID); err != nil {
 		b.send(ctx, msg.Chat.ID, "Правило не найдено.")
 		return
 	}
@@ -104,7 +115,7 @@ func (b *Bot) cmdToggle(ctx context.Context, msg *telego.Message, cmd, arg strin
 		return
 	}
 	enabled := cmd == "/on"
-	if err := b.store.SetRuleEnabled(ctx, id, msg.From.ID, enabled); err != nil {
+	if err := b.repo.SetRuleEnabled(ctx, id, msg.From.ID, enabled); err != nil {
 		b.send(ctx, msg.Chat.ID, "Правило не найдено.")
 		return
 	}
@@ -116,7 +127,7 @@ func (b *Bot) cmdToggle(ctx context.Context, msg *telego.Message, cmd, arg strin
 }
 
 func (b *Bot) send(ctx context.Context, chatID int64, text string) {
-	_, _ = b.bot.SendMessage(context.Background(), &telego.SendMessageParams{
+	_, _ = b.bot.SendMessage(ctx, &telego.SendMessageParams{
 		ChatID: telego.ChatID{ID: chatID},
 		Text:   text,
 	})

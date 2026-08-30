@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 	"html"
-	"strconv"
 	"strings"
 
 	"github.com/mymmrac/telego"
+	"github.com/shopspring/decimal"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
 
@@ -19,21 +19,33 @@ var printer = message.NewPrinter(language.Russian)
 const maxMessageLen = 4096
 
 func (b *Bot) SendCards(ctx context.Context, chatID int64, offers []models.Offer) error {
-	for _, chunk := range chunks(offers, maxMessageLen) {
-		var sb strings.Builder
-		for _, o := range chunk {
-			fmt.Fprintf(&sb, "<b>%s</b>\n%s\n<b>%s</b>\n<a href=\"%s\">Открыть</a>\n\n",
-				html.EscapeString(o.Title), html.EscapeString(o.City), formatPrice(o.Price), html.EscapeString(o.URL))
+	cards := make([]string, 0, len(offers))
+	for _, o := range offers {
+		cards = append(cards, formatCard(o))
+	}
+	var sb strings.Builder
+	for i, card := range cards {
+		if sb.Len()+len(card) > maxMessageLen {
+			fmt.Fprintf(&sb, "\n…и ещё %d", len(cards)-i)
+			break
 		}
-		if _, err := b.bot.SendMessage(ctx, &telego.SendMessageParams{
-			ChatID:    telego.ChatID{ID: chatID},
-			Text:      sb.String(),
-			ParseMode: "HTML",
-		}); err != nil {
-			return err
+		sb.WriteString(card)
+	}
+	if sb.Len() == 0 && len(cards) > 0 {
+		sb.WriteString(truncate(cards[0], maxMessageLen-12))
+		if more := len(cards) - 1; more > 0 {
+			fmt.Fprintf(&sb, "\n…и ещё %d", more)
 		}
 	}
-	return nil
+	if sb.Len() == 0 {
+		return nil
+	}
+	_, err := b.bot.SendMessage(ctx, &telego.SendMessageParams{
+		ChatID:    telego.ChatID{ID: chatID},
+		Text:      sb.String(),
+		ParseMode: "HTML",
+	})
+	return err
 }
 
 func (b *Bot) SendAlert(ctx context.Context, chatID int64, store string, err error) error {
@@ -45,35 +57,30 @@ func (b *Bot) SendAlert(ctx context.Context, chatID int64, store string, err err
 	return sendErr
 }
 
-func chunks(offers []models.Offer, limit int) [][]models.Offer {
-	out := [][]models.Offer{}
-	cur := []models.Offer{}
-	size := 0
-	for _, o := range offers {
-		card := len(o.Title) + len(o.City) + len(o.Price) + len(o.URL) + 40
-		if size+card > limit && len(cur) > 0 {
-			out = append(out, cur)
-			cur = []models.Offer{}
-			size = 0
-		}
-		cur = append(cur, o)
-		size += card
+func formatCard(o models.Offer) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "<b>Магазин:</b> %s\n", html.EscapeString(o.Store))
+	fmt.Fprintf(&sb, "<b>Товар:</b> %s\n", html.EscapeString(o.Title))
+	price := formatPrice(o.Price)
+	if o.OldPrice != nil {
+		price += fmt.Sprintf(" (было %s)", formatPrice(*o.OldPrice))
 	}
-	if len(cur) > 0 {
-		out = append(out, cur)
-	}
-	return out
+	fmt.Fprintf(&sb, "<b>Цена:</b> %s\n", price)
+	fmt.Fprintf(&sb, "<a href=\"%s\">Ссылка</a>\n\n", html.EscapeString(o.URL))
+	return sb.String()
 }
 
-func formatPrice(price string) string {
-	if price == "" {
-		return "—"
+func formatPrice(v decimal.Decimal) string {
+	if v.IsInteger() {
+		return printer.Sprintf("%d ₽", v.IntPart())
 	}
-	if v, err := strconv.ParseInt(price, 10, 64); err == nil {
-		return printer.Sprintf("%d ₽", v)
+	return printer.Sprintf("%s ₽", v.StringFixed(2))
+}
+
+func truncate(s string, limit int) string {
+	r := []rune(s)
+	if len(r) <= limit {
+		return s
 	}
-	if v, err := strconv.ParseFloat(price, 64); err == nil {
-		return printer.Sprintf("%.2f ₽", v)
-	}
-	return html.EscapeString(price) + " ₽"
+	return string(r[:limit]) + "…"
 }

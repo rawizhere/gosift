@@ -16,11 +16,11 @@ import (
 
 type Bot struct {
 	bot     *telego.Bot
-	store   *repo.Store
+	repo    *repo.Store
 	cfg     *config.Config
 	log     *slog.Logger
 	allowed map[int64]bool
-	stores  []storeOption
+	stores  []string
 }
 
 func New(cfg *config.Config, store *repo.Store, log *slog.Logger, hc *httpclient.Client, storeNames []string) (*Bot, error) {
@@ -31,17 +31,15 @@ func New(cfg *config.Config, store *repo.Store, log *slog.Logger, hc *httpclient
 	if err != nil {
 		return nil, fmt.Errorf("create bot: %w", err)
 	}
-	opts := make([]storeOption, 0, len(storeNames))
-	for _, name := range storeNames {
-		opts = append(opts, storeOption{Key: name, Label: name})
-	}
+	stores := make([]string, len(storeNames))
+	copy(stores, storeNames)
 	return &Bot{
 		bot:     bot,
-		store:   store,
+		repo:    store,
 		cfg:     cfg,
 		log:     log,
 		allowed: parseAllowed(cfg.TelegramAllowedUsers),
-		stores:  opts,
+		stores:  stores,
 	}, nil
 }
 
