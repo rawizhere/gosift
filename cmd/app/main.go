@@ -12,8 +12,11 @@ import (
 
 	"github.com/rawizhere/gosift/internal/config"
 	"github.com/rawizhere/gosift/internal/db"
+	"github.com/rawizhere/gosift/internal/httpclient"
 	"github.com/rawizhere/gosift/internal/logger"
+	"github.com/rawizhere/gosift/internal/repo"
 	"github.com/rawizhere/gosift/internal/scheduler"
+	"github.com/rawizhere/gosift/internal/telegram"
 )
 
 func main() {
@@ -35,6 +38,16 @@ func run() error {
 	}
 	defer func() { _ = sqlDB.Close() }()
 
+	store := repo.NewStore(sqlDB)
+	hc, err := httpclient.NewRetryable(cfg)
+	if err != nil {
+		return err
+	}
+	bot, err := telegram.New(cfg, store, log, hc)
+	if err != nil {
+		return err
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -43,6 +56,9 @@ func run() error {
 		return scheduler.Run(ctx, cfg.ParseInterval, cfg.ParseJitter, func() {
 			log.Info("parse cycle")
 		})
+	})
+	g.Go(func() error {
+		return bot.Run(ctx)
 	})
 	if err := g.Wait(); err != nil && !errors.Is(err, context.Canceled) {
 		return err
