@@ -1,6 +1,10 @@
 package models
 
-import "time"
+import (
+	"time"
+
+	"github.com/shopspring/decimal"
+)
 
 type Rule struct {
 	ID        int64
@@ -9,19 +13,20 @@ type Rule struct {
 	Store     string
 	Query     string
 	City      string
-	MinPrice  string
-	MaxPrice  string
+	MinPrice  *decimal.Decimal
+	MaxPrice  *decimal.Decimal
 	Enabled   bool
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
 
 type Offer struct {
+	Key       string
 	Store     string
 	Title     string
 	URL       string
-	Price     string
-	OldPrice  string
+	Price     decimal.Decimal
+	OldPrice  *decimal.Decimal
 	City      string
 	Available bool
 	ParsedAt  time.Time

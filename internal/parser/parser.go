@@ -9,6 +9,7 @@ import (
 
 type SearchOptions struct {
 	Limit int
+	Query string
 }
 
 type Parser interface {

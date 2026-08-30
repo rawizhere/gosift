@@ -2,10 +2,11 @@ package scheduler
 
 import (
 	"context"
-	"math/rand/v2"
 	"time"
 
 	"github.com/go-co-op/gocron/v2"
+
+	"github.com/rawizhere/gosift/internal/randutil"
 )
 
 func Run(ctx context.Context, interval, startJitter time.Duration, fn func()) error {
@@ -15,7 +16,7 @@ func Run(ctx context.Context, interval, startJitter time.Duration, fn func()) er
 	}
 	var opts []gocron.JobOption
 	if startJitter > 0 {
-		delay := time.Duration(rand.Int64N(int64(startJitter)))
+		delay := randutil.Duration(startJitter)
 		opts = append(opts, gocron.WithStartAt(gocron.WithStartDateTime(time.Now().Add(delay))))
 	}
 	if _, err := s.NewJob(gocron.DurationJob(interval), gocron.NewTask(fn), opts...); err != nil {

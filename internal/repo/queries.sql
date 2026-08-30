@@ -2,9 +2,6 @@
 INSERT OR IGNORE INTO users (user_id, username, first_name, chat_id)
 VALUES (?, ?, ?, ?);
 
--- name: GetUser :one
-SELECT user_id, username, first_name, chat_id, created_at FROM users WHERE user_id = ?;
-
 -- name: CreateRule :exec
 INSERT INTO rules (user_id, chat_id, store, query, city, min_price, max_price)
 VALUES (?, ?, ?, ?, ?, ?, ?);

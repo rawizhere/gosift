@@ -13,8 +13,9 @@ import (
 )
 
 type Client struct {
-	*retryablehttp.Client
-	limiter *rate.Limiter
+	rc       *retryablehttp.Client
+	rps      float64
+	limiters map[string]*rate.Limiter
 }
 
 func NewRetryable(cfg *config.Config) (*Client, error) {
@@ -44,17 +45,21 @@ func NewRetryable(cfg *config.Config) (*Client, error) {
 			req.Header.Set("User-Agent", ua)
 		}
 	}
-	limiter := rate.NewLimiter(rate.Limit(cfg.StoreRPS), 1)
-	return &Client{Client: rc, limiter: limiter}, nil
+	return &Client{rc: rc, rps: cfg.StoreRPS, limiters: map[string]*rate.Limiter{}}, nil
 }
 
-func (c *Client) Do(req *retryablehttp.Request) (*http.Response, error) {
-	if err := c.limiter.Wait(req.Context()); err != nil {
+func (c *Client) StandardClient() *http.Client {
+	return c.rc.StandardClient()
+}
+
+func (c *Client) Do(ctx context.Context, req *retryablehttp.Request, store string) (*http.Response, error) {
+	limiter := c.limiters[store]
+	if limiter == nil {
+		limiter = rate.NewLimiter(rate.Limit(c.rps), 1)
+		c.limiters[store] = limiter
+	}
+	if err := limiter.Wait(ctx); err != nil {
 		return nil, err
 	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) Request(ctx context.Context, method, url string) (*retryablehttp.Request, error) {
-	return retryablehttp.NewRequestWithContext(ctx, method, url, nil)
+	return c.rc.Do(req)
 }

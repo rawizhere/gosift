@@ -139,23 +139,6 @@ func (q *Queries) GetSetting(ctx context.Context, key string) (string, error) {
 	return value, err
 }
 
-const getUser = `-- name: GetUser :one
-SELECT user_id, username, first_name, chat_id, created_at FROM users WHERE user_id = ?
-`
-
-func (q *Queries) GetUser(ctx context.Context, userID int64) (User, error) {
-	row := q.db.QueryRowContext(ctx, getUser, userID)
-	var i User
-	err := row.Scan(
-		&i.UserID,
-		&i.Username,
-		&i.FirstName,
-		&i.ChatID,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
 const listEnabledRules = `-- name: ListEnabledRules :many
 SELECT id, user_id, chat_id, store, query, city, min_price, max_price, enabled, created_at, updated_at
 FROM rules WHERE enabled = 1 ORDER BY id

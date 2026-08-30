@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"math/rand/v2"
+	"sort"
 	"strings"
 	"time"
 
@@ -12,8 +12,11 @@ import (
 
 	"github.com/rawizhere/gosift/internal/config"
 	"github.com/rawizhere/gosift/internal/models"
+	"github.com/rawizhere/gosift/internal/randutil"
 	"github.com/rawizhere/gosift/internal/repo"
 )
+
+const consecutiveFailures = 3
 
 type Sender interface {
 	SendCards(ctx context.Context, chatID int64, offers []models.Offer) error
@@ -21,31 +24,33 @@ type Sender interface {
 }
 
 type Engine struct {
-	store     *repo.Store
+	repo      *repo.Store
 	registry  *Registry
 	sender    Sender
 	cfg       *config.Config
 	log       *slog.Logger
 	lastAlert map[string]time.Time
+	fails     map[string]int
 }
 
 func NewEngine(store *repo.Store, registry *Registry, sender Sender, cfg *config.Config, log *slog.Logger) *Engine {
 	return &Engine{
-		store:     store,
+		repo:      store,
 		registry:  registry,
 		sender:    sender,
 		cfg:       cfg,
 		log:       log,
 		lastAlert: map[string]time.Time{},
+		fails:     map[string]int{},
 	}
 }
 
 func (e *Engine) RunOnce(ctx context.Context) error {
-	rules, err := e.store.ListEnabledRules(ctx)
+	rules, err := e.repo.ListEnabledRules(ctx)
 	if err != nil {
 		return fmt.Errorf("list rules: %w", err)
 	}
-	byChat := map[int64][]models.Offer{}
+	seen := map[string]bool{}
 	for _, rule := range rules {
 		e.jitterSleep(ctx)
 		offers, err := e.parseRule(ctx, rule)
@@ -53,15 +58,22 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 			e.alert(rule, err)
 			continue
 		}
-		byChat[rule.ChatID] = append(byChat[rule.ChatID], offers...)
-	}
-	for chatID, offers := range byChat {
-		offers = dedupe(offers)
-		if len(offers) == 0 {
+		e.fails[alertKey(rule)] = 0
+		unique := make([]models.Offer, 0, len(offers))
+		for _, o := range offers {
+			key := fmt.Sprintf("%d|%s", rule.ChatID, offerKey(o))
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			unique = append(unique, o)
+		}
+		if len(unique) == 0 {
 			continue
 		}
-		if err := e.sender.SendCards(ctx, chatID, offers); err != nil {
-			e.log.Error("send cards", "chat", chatID, "error", err)
+		sortOffers(unique)
+		if err := e.sender.SendCards(ctx, rule.ChatID, unique); err != nil {
+			e.log.Error("send cards", "chat", rule.ChatID, "error", err)
 		}
 	}
 	return nil
@@ -77,7 +89,7 @@ func (e *Engine) parseRule(ctx context.Context, rule models.Rule) (offers []mode
 	if err != nil {
 		return nil, err
 	}
-	raw, err := p.Search(ctx, rule, SearchOptions{Limit: e.cfg.ParseLimit})
+	raw, err := p.Search(ctx, rule, SearchOptions{Query: positiveQuery(rule.Query), Limit: e.cfg.ParseLimit})
 	if err != nil {
 		return nil, err
 	}
@@ -87,13 +99,28 @@ func (e *Engine) parseRule(ctx context.Context, rule models.Rule) (offers []mode
 			out = append(out, o)
 		}
 	}
+	sortOffers(out)
 	return out, nil
 }
 
-func cityMatch(ruleCity, offerCity string) bool {
-	a := strings.ToLower(strings.TrimSpace(ruleCity))
-	b := strings.ToLower(strings.TrimSpace(offerCity))
-	return a == b || strings.Contains(b, a) || strings.Contains(a, b)
+func positiveQuery(q string) string {
+	pos, _ := splitQuery(q)
+	return pos
+}
+
+func splitQuery(q string) (string, []string) {
+	var pos []string
+	var neg []string
+	for _, t := range strings.Fields(q) {
+		if strings.HasPrefix(t, "-") {
+			if t = strings.TrimPrefix(t, "-"); t != "" {
+				neg = append(neg, strings.ToLower(t))
+			}
+			continue
+		}
+		pos = append(pos, t)
+	}
+	return strings.TrimSpace(strings.Join(pos, " ")), neg
 }
 
 func (e *Engine) matches(rule models.Rule, offer models.Offer) bool {
@@ -103,17 +130,57 @@ func (e *Engine) matches(rule models.Rule, offer models.Offer) bool {
 	if rule.City != "" && !cityMatch(rule.City, offer.City) {
 		return false
 	}
-	query := strings.ToLower(strings.TrimSpace(rule.Query))
+	pos, neg := splitQuery(rule.Query)
 	title := strings.ToLower(offer.Title)
-	return query == "" || strings.Contains(title, query)
+	if pos != "" && !strings.Contains(title, pos) {
+		return false
+	}
+	for _, n := range neg {
+		if strings.Contains(title, n) {
+			return false
+		}
+	}
+	return true
+}
+
+func cityMatch(ruleCity, offerCity string) bool {
+	a := strings.ToLower(strings.TrimSpace(ruleCity))
+	b := strings.ToLower(strings.TrimSpace(offerCity))
+	return a == b || strings.Contains(b, a) || strings.Contains(a, b)
+}
+
+func priceInRange(min, max *decimal.Decimal, price decimal.Decimal) bool {
+	if min != nil && price.LessThan(*min) {
+		return false
+	}
+	if max != nil && price.GreaterThan(*max) {
+		return false
+	}
+	return true
+}
+
+func sortOffers(offers []models.Offer) {
+	sort.SliceStable(offers, func(i, j int) bool {
+		return offers[i].Price.LessThan(offers[j].Price)
+	})
+}
+
+func offerKey(o models.Offer) string {
+	if o.Key != "" {
+		return o.Store + "|" + o.Key
+	}
+	return o.Store + "|" + o.URL + "|" + o.Title
+}
+
+func alertKey(rule models.Rule) string {
+	return fmt.Sprintf("%d:%s", rule.ChatID, rule.Store)
 }
 
 func (e *Engine) jitterSleep(ctx context.Context) {
 	if e.cfg.ParseJitter <= 0 {
 		return
 	}
-	delay := time.Duration(rand.Int64N(int64(e.cfg.ParseJitter)))
-	timer := time.NewTimer(delay)
+	timer := time.NewTimer(randutil.Duration(e.cfg.ParseJitter))
 	defer timer.Stop()
 	select {
 	case <-ctx.Done():
@@ -123,50 +190,17 @@ func (e *Engine) jitterSleep(ctx context.Context) {
 
 func (e *Engine) alert(rule models.Rule, err error) {
 	e.log.Error("parse rule failed", "rule", rule.ID, "store", rule.Store, "error", err)
-	key := fmt.Sprintf("%d:%s", rule.ChatID, rule.Store)
-	last := e.lastAlert[key]
-	if time.Since(last) < e.cfg.NotifyAlertInterval {
+	key := alertKey(rule)
+	e.fails[key]++
+	if e.fails[key] < consecutiveFailures {
+		return
+	}
+	if time.Since(e.lastAlert[key]) < e.cfg.NotifyAlertInterval {
 		return
 	}
 	e.lastAlert[key] = time.Now()
+	e.fails[key] = 0
 	if err := e.sender.SendAlert(context.Background(), rule.ChatID, rule.Store, err); err != nil {
 		e.log.Error("send alert", "chat", rule.ChatID, "error", err)
 	}
-}
-
-func priceInRange(minStr, maxStr, priceStr string) bool {
-	if priceStr == "" {
-		return false
-	}
-	price, err := decimal.NewFromString(priceStr)
-	if err != nil {
-		return false
-	}
-	if minStr != "" {
-		min, err := decimal.NewFromString(minStr)
-		if err == nil && price.LessThan(min) {
-			return false
-		}
-	}
-	if maxStr != "" {
-		max, err := decimal.NewFromString(maxStr)
-		if err == nil && price.GreaterThan(max) {
-			return false
-		}
-	}
-	return true
-}
-
-func dedupe(offers []models.Offer) []models.Offer {
-	seen := map[string]struct{}{}
-	out := make([]models.Offer, 0, len(offers))
-	for _, o := range offers {
-		key := o.Store + "|" + o.URL + "|" + o.Title
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		out = append(out, o)
-	}
-	return out
 }

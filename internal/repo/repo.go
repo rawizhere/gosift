@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 
+	"github.com/shopspring/decimal"
+
 	"github.com/rawizhere/gosift/internal/models"
 )
 
@@ -25,19 +27,6 @@ func (s *Store) CreateUser(ctx context.Context, u models.User) error {
 	})
 }
 
-func (s *Store) GetUser(ctx context.Context, userID int64) (models.User, error) {
-	u, err := s.q.GetUser(ctx, userID)
-	if err != nil {
-		return models.User{}, err
-	}
-	return models.User{
-		UserID:    u.UserID,
-		Username:  u.Username.String,
-		FirstName: u.FirstName.String,
-		ChatID:    u.ChatID,
-	}, nil
-}
-
 func (s *Store) CreateRule(ctx context.Context, r models.Rule) error {
 	return s.q.CreateRule(ctx, CreateRuleParams{
 		UserID:   r.UserID,
@@ -45,8 +34,8 @@ func (s *Store) CreateRule(ctx context.Context, r models.Rule) error {
 		Store:    r.Store,
 		Query:    r.Query,
 		City:     r.City,
-		MinPrice: str(r.MinPrice),
-		MaxPrice: str(r.MaxPrice),
+		MinPrice: decString(r.MinPrice),
+		MaxPrice: decString(r.MaxPrice),
 	})
 }
 
@@ -78,8 +67,8 @@ func (s *Store) UpdateRule(ctx context.Context, r models.Rule) error {
 	return s.q.UpdateRule(ctx, UpdateRuleParams{
 		Query:    r.Query,
 		City:     r.City,
-		MinPrice: str(r.MinPrice),
-		MaxPrice: str(r.MaxPrice),
+		MinPrice: decString(r.MinPrice),
+		MaxPrice: decString(r.MaxPrice),
 		ID:       r.ID,
 		UserID:   r.UserID,
 	})
@@ -125,8 +114,11 @@ func (s *Store) DeleteDialogState(ctx context.Context, chatID int64) error {
 	return s.q.DeleteDialogState(ctx, chatID)
 }
 
-func str(v string) sql.NullString {
-	return sql.NullString{String: v, Valid: v != ""}
+func decString(d *decimal.Decimal) sql.NullString {
+	if d == nil {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: d.String(), Valid: true}
 }
 
 func boolInt(v bool) int64 {
@@ -152,10 +144,21 @@ func toRule(r Rule) models.Rule {
 		Store:     r.Store,
 		Query:     r.Query,
 		City:      r.City,
-		MinPrice:  r.MinPrice.String,
-		MaxPrice:  r.MaxPrice.String,
+		MinPrice:  toDec(r.MinPrice),
+		MaxPrice:  toDec(r.MaxPrice),
 		Enabled:   r.Enabled == 1,
 		CreatedAt: timeParse(r.CreatedAt),
 		UpdatedAt: timeParse(r.UpdatedAt),
 	}
+}
+
+func toDec(s sql.NullString) *decimal.Decimal {
+	if !s.Valid || s.String == "" {
+		return nil
+	}
+	d, err := decimal.NewFromString(s.String)
+	if err != nil {
+		return nil
+	}
+	return &d
 }
