@@ -1,9 +1,10 @@
-# env (секреты) — шаблон .env.example коммитим
+# env
 .env
 .env.*
 !.env.example
 
-# артефакты сборки
+# build artifacts
+/app
 /gosift
 /bin/
 /dist/
@@ -14,16 +15,16 @@
 *.db-shm
 *.db-wal
 
-# покрытие и временные файлы
+# coverage and temp
 coverage.out
 *.out
 
-# IDE / ОС
+# IDE / OS
 .idea/
 .vscode/
 .DS_Store
 
-# переопределение глобального gitignore: docs/ и PLAN.md нужны в репо
+# keep docs in repo
 !docs/
 !docs/**
 !PLAN.md

@@ -5,7 +5,7 @@ services:
       dockerfile: deployments/Dockerfile
     container_name: gosift
     env_file:
-      - ../.env        # cp deployments/.env.example ../.env, заполнить токен
+      - ../.env
     environment:
       DB_PATH: /data/gosift.db
     volumes:

@@ -1,7 +1,6 @@
 services:
   gosift:
-    # Тег задаём явно при деплое: GOSIFT_IMAGE_TAG=sha-<commit> docker compose up -d --pull always
-    # Пин на sha-/v-тег, а не на latest — откат детерминированный (см. PLAN /docs/ops.md).
+    # tag set explicitly at deploy, never latest
     image: ghcr.io/rawizhere/gosift:${GOSIFT_IMAGE_TAG}
     container_name: gosift
     env_file:

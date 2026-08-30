@@ -14,7 +14,7 @@ RUN go mod download
 
 COPY . .
 
-# CGO нет (modernc.org/sqlite), миграции вшиты в бинарь (goose embed)
+# Pure-Go sqlite, no CGO; migrations embedded
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -trimpath -o /gosift ./cmd/app
 
 # ---- runtime ----
@@ -29,7 +29,7 @@ COPY --from=builder /gosift /usr/local/bin/gosift
 USER app
 WORKDIR /app
 
-# SQLite-файл живёт на volume /data (DB_PATH=/data/gosift.db)
+# SQLite file lives on the /data volume
 VOLUME ["/data"]
 
 CMD ["gosift"]
