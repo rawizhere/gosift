@@ -212,7 +212,7 @@ func (b *Bot) saveEdit(ctx context.Context, msg *telego.Message, d dialogData, v
 func (b *Bot) askStore(ctx context.Context, chatID int64) {
 	rows := [][]telego.InlineKeyboardButton{}
 	for _, s := range b.stores {
-		rows = append(rows, te.InlineKeyboardRow(telego.InlineKeyboardButton{Text: s.Label, CallbackData: s.Key}))
+		rows = append(rows, te.InlineKeyboardRow(telego.InlineKeyboardButton{Text: s.Label, CallbackData: "store:" + s.Key}))
 	}
 	_, _ = b.bot.SendMessage(context.Background(), &telego.SendMessageParams{
 		ChatID:      telego.ChatID{ID: chatID},
