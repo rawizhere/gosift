@@ -10,6 +10,7 @@ import (
 type noopLogger struct{}
 
 func (noopLogger) Printf(_ string, _ ...any) {}
+func (noopLogger) Fatalf(_ string, _ ...any) {}
 
 func migrate(sqlDB *sql.DB) error {
 	goose.SetBaseFS(migrationsFS)
