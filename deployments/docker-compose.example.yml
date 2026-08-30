@@ -1,0 +1,16 @@
+services:
+  gosift:
+    build:
+      context: ..
+      dockerfile: deployments/Dockerfile
+    container_name: gosift
+    env_file:
+      - ../.env        # cp deployments/.env.example ../.env, заполнить токен
+    environment:
+      DB_PATH: /data/gosift.db
+    volumes:
+      - gosift_data:/data
+    restart: unless-stopped
+
+volumes:
+  gosift_data:

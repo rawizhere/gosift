@@ -1,0 +1,16 @@
+services:
+  gosift:
+    # Тег задаём явно при деплое: GOSIFT_IMAGE_TAG=sha-<commit> docker compose up -d --pull always
+    # Пин на sha-/v-тег, а не на latest — откат детерминированный (см. PLAN /docs/ops.md).
+    image: ghcr.io/rawizhere/gosift:${GOSIFT_IMAGE_TAG}
+    container_name: gosift
+    env_file:
+      - ../.env
+    environment:
+      DB_PATH: /data/gosift.db
+    volumes:
+      - gosift_data:/data
+    restart: unless-stopped
+
+volumes:
+  gosift_data:

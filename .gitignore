@@ -1,0 +1,29 @@
+# env (секреты) — шаблон .env.example коммитим
+.env
+.env.*
+!.env.example
+
+# артефакты сборки
+/gosift
+/bin/
+/dist/
+*.exe
+
+# SQLite
+*.db
+*.db-shm
+*.db-wal
+
+# покрытие и временные файлы
+coverage.out
+*.out
+
+# IDE / ОС
+.idea/
+.vscode/
+.DS_Store
+
+# переопределение глобального gitignore: docs/ и PLAN.md нужны в репо
+!docs/
+!docs/**
+!PLAN.md

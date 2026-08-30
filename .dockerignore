@@ -1,0 +1,14 @@
+.git
+.github
+docs
+*.md
+.env
+.env.*
+*.db
+*.db-shm
+*.db-wal
+deployments
+coverage.out
+Dockerfile*
+.dockerignore
+.gitignore
