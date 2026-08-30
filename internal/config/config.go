@@ -24,6 +24,7 @@ type Config struct {
 	HTTPProxy            string        `env:"HTTP_PROXY"`
 	UserAgent            string        `env:"USER_AGENT"`
 	StoreBaseURL         string        `env:"STORE_KOMISSIONKI_BASE_URL" envDefault:"https://komissionki.ru"`
+	StoreAPIURL          string        `env:"STORE_KOMISSIONKI_API_URL" envDefault:"https://saf.komissionki.ru"`
 	StoreEnabled         bool          `env:"STORE_KOMISSIONKI_ENABLED" envDefault:"true"`
 	StoreRPS             float64       `env:"STORE_KOMISSIONKI_RPS" envDefault:"0.5"`
 }

@@ -30,8 +30,6 @@ type storeOption struct {
 	Label string
 }
 
-var stores = []storeOption{{Key: "komissionki", Label: "komissionki.ru"}}
-
 func (b *Bot) cmdAdd(ctx context.Context, msg *telego.Message) {
 	b.startDialog(ctx, msg.Chat.ID, "add.store", dialogData{Mode: "add"})
 	b.askStore(ctx, msg.Chat.ID)
@@ -213,8 +211,8 @@ func (b *Bot) saveEdit(ctx context.Context, msg *telego.Message, d dialogData, v
 
 func (b *Bot) askStore(ctx context.Context, chatID int64) {
 	rows := [][]telego.InlineKeyboardButton{}
-	for _, s := range stores {
-		rows = append(rows, te.InlineKeyboardRow(telego.InlineKeyboardButton{Text: storeLabel(s.Key), CallbackData: s.Key}))
+	for _, s := range b.stores {
+		rows = append(rows, te.InlineKeyboardRow(telego.InlineKeyboardButton{Text: s.Label, CallbackData: s.Key}))
 	}
 	_, _ = b.bot.SendMessage(context.Background(), &telego.SendMessageParams{
 		ChatID:      telego.ChatID{ID: chatID},
@@ -286,11 +284,6 @@ func (b *Bot) clearDialog(ctx context.Context, chatID int64) {
 }
 
 func storeLabel(key string) string {
-	for _, s := range stores {
-		if s.Key == key {
-			return s.Label
-		}
-	}
 	return key
 }
 

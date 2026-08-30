@@ -14,6 +14,8 @@ import (
 	"github.com/rawizhere/gosift/internal/db"
 	"github.com/rawizhere/gosift/internal/httpclient"
 	"github.com/rawizhere/gosift/internal/logger"
+	"github.com/rawizhere/gosift/internal/parser"
+	"github.com/rawizhere/gosift/internal/parsers/komissionki"
 	"github.com/rawizhere/gosift/internal/repo"
 	"github.com/rawizhere/gosift/internal/scheduler"
 	"github.com/rawizhere/gosift/internal/telegram"
@@ -43,10 +45,17 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	bot, err := telegram.New(cfg, store, log, hc)
+	registry := parser.NewRegistry()
+	if cfg.StoreEnabled {
+		if err := registry.Register(komissionki.New(hc, cfg.StoreBaseURL, cfg.StoreAPIURL)); err != nil {
+			return err
+		}
+	}
+	bot, err := telegram.New(cfg, store, log, hc, registry.Names())
 	if err != nil {
 		return err
 	}
+	engine := parser.NewEngine(store, registry, bot, cfg, log)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -54,7 +63,9 @@ func run() error {
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
 		return scheduler.Run(ctx, cfg.ParseInterval, cfg.ParseJitter, func() {
-			log.Info("parse cycle")
+			if err := engine.RunOnce(ctx); err != nil {
+				log.Error("parse cycle failed", "error", err)
+			}
 		})
 	})
 	g.Go(func() error {

@@ -20,9 +20,10 @@ type Bot struct {
 	cfg     *config.Config
 	log     *slog.Logger
 	allowed map[int64]bool
+	stores  []storeOption
 }
 
-func New(cfg *config.Config, store *repo.Store, log *slog.Logger, hc *httpclient.Client) (*Bot, error) {
+func New(cfg *config.Config, store *repo.Store, log *slog.Logger, hc *httpclient.Client, storeNames []string) (*Bot, error) {
 	bot, err := telego.NewBot(cfg.TelegramBotToken,
 		telego.WithHTTPClient(hc.StandardClient()),
 		telego.WithLogger(slogAdapter{log}),
@@ -30,12 +31,17 @@ func New(cfg *config.Config, store *repo.Store, log *slog.Logger, hc *httpclient
 	if err != nil {
 		return nil, fmt.Errorf("create bot: %w", err)
 	}
+	opts := make([]storeOption, 0, len(storeNames))
+	for _, name := range storeNames {
+		opts = append(opts, storeOption{Key: name, Label: name})
+	}
 	return &Bot{
 		bot:     bot,
 		store:   store,
 		cfg:     cfg,
 		log:     log,
 		allowed: parseAllowed(cfg.TelegramAllowedUsers),
+		stores:  opts,
 	}, nil
 }
 
