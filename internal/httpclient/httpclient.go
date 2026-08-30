@@ -32,6 +32,12 @@ func NewRetryable(cfg *config.Config) (*Client, error) {
 	rc.RetryWaitMin = cfg.ParseRetryBackoff
 	rc.RetryWaitMax = cfg.ParseRetryBackoff * 5
 	rc.Logger = nil
+	rc.CheckRetry = func(ctx context.Context, resp *http.Response, err error) (bool, error) {
+		if resp != nil && resp.StatusCode == http.StatusTooManyRequests {
+			return true, nil
+		}
+		return retryablehttp.DefaultRetryPolicy(ctx, resp, err)
+	}
 	if cfg.UserAgent != "" {
 		ua := cfg.UserAgent
 		rc.RequestLogHook = func(_ retryablehttp.Logger, req *http.Request, _ int) {
