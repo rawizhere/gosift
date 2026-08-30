@@ -7,8 +7,13 @@ import (
 	"github.com/pressly/goose/v3"
 )
 
+type noopLogger struct{}
+
+func (noopLogger) Printf(_ string, _ ...any) {}
+
 func migrate(sqlDB *sql.DB) error {
 	goose.SetBaseFS(migrationsFS)
+	goose.SetLogger(noopLogger{})
 	if err := goose.SetDialect("sqlite3"); err != nil {
 		return err
 	}
