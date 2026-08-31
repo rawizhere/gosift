@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/mymmrac/telego"
+	te "github.com/mymmrac/telego/telegoutil"
 
 	"github.com/rawizhere/gosift/internal/models"
 )
@@ -57,11 +58,12 @@ func (b *Bot) cmdStart(ctx context.Context, msg *telego.Message) {
 	if err != nil {
 		b.log.Error("create user", "error", err)
 	}
-	b.send(ctx, msg.Chat.ID, "Привет! Я парсю магазины и присылаю карточки по твоим фильтрам.\n\n/add — добавить правило\n/help — справка")
+	b.send(ctx, msg.Chat.ID, "Привет! Я парсю магазины и присылаю карточки по твоим фильтрам.")
+	b.showMenu(ctx, msg.Chat.ID)
 }
 
 func (b *Bot) cmdHelp(ctx context.Context, msg *telego.Message) {
-	b.send(ctx, msg.Chat.ID, "Команды:\n/add — добавить правило\n/list — мои правила\n/edit — изменить правило\n/remove <id> — удалить правило\n/on <id> / /off <id> — включить/выключить правило\n/settings — настройки бота\n/help — справка\n\nВ запросе можно исключать слова: macbook -neo")
+	b.showMenu(ctx, msg.Chat.ID)
 }
 
 func (b *Bot) cmdSettings(ctx context.Context, msg *telego.Message) {
@@ -90,7 +92,11 @@ func (b *Bot) cmdList(ctx context.Context, msg *telego.Message) {
 		if !r.Enabled {
 			status = "выкл"
 		}
-		fmt.Fprintf(&sb, "%d. %s [%s] (%s)\n", r.ID, html.EscapeString(r.Query), status, html.EscapeString(r.City))
+		scope := ""
+		if r.Category != "" {
+			scope = " [" + categoryTitle(r.Category) + "]"
+		}
+		fmt.Fprintf(&sb, "%d. %s%s [%s] (%s)\n", r.ID, html.EscapeString(r.Query), scope, status, html.EscapeString(r.City))
 	}
 	b.send(ctx, msg.Chat.ID, sb.String())
 }
@@ -140,4 +146,17 @@ func userFromMessage(msg *telego.Message) models.User {
 		FirstName: msg.From.FirstName,
 		ChatID:    msg.Chat.ID,
 	}
+}
+
+// showMenu renders the main menu.
+func (b *Bot) showMenu(ctx context.Context, chatID int64) {
+	_, _ = b.bot.SendMessage(ctx, &telego.SendMessageParams{
+		ChatID: telego.ChatID{ID: chatID},
+		Text:   "Меню:",
+		ReplyMarkup: te.InlineKeyboard(
+			te.InlineKeyboardRow(telego.InlineKeyboardButton{Text: "➕ Добавить правило", CallbackData: "menu:add"}),
+			te.InlineKeyboardRow(telego.InlineKeyboardButton{Text: "📋 Мои правила", CallbackData: "menu:list"}),
+			te.InlineKeyboardRow(telego.InlineKeyboardButton{Text: "✏️ Изменить", CallbackData: "menu:edit"}),
+		),
+	})
 }

@@ -88,11 +88,7 @@ func TestToOfferDescriptionAndImages(t *testing.T) {
 	}
 }
 
-// TestSearchLive hits the real komissionki API. It verifies the price-filter
-// handshake fix (an empty sa must not fail the rule) and that offers carry
-// downloadable images. Run only when explicitly enabled:
-//
-//	GOSIFT_LIVE=1 go test ./internal/parsers/komissionki/ -run TestSearchLive -v
+// TestSearchLive hits the real komissionki API; set GOSIFT_LIVE=1 to run.
 func TestSearchLive(t *testing.T) {
 	if os.Getenv("GOSIFT_LIVE") == "" {
 		t.Skip("set GOSIFT_LIVE=1 to run live API tests")
@@ -144,5 +140,20 @@ func TestSearchLive(t *testing.T) {
 		if len(got) == 0 {
 			t.Errorf("first image of %s could not be downloaded from any host", o.Key)
 		}
+	}
+}
+
+func TestRuleCategoryParams(t *testing.T) {
+	if cat, parent := ruleCategoryParams(""); cat != "" || parent {
+		t.Fatalf("empty path: got %q %v", cat, parent)
+	}
+	if cat, parent := ruleCategoryParams("parent:37"); cat != "37" || !parent {
+		t.Fatalf("parent path: got %q %v", cat, parent)
+	}
+	if cat, parent := ruleCategoryParams("child:45"); cat != "45" || parent {
+		t.Fatalf("child path: got %q %v", cat, parent)
+	}
+	if cat, parent := ruleCategoryParams("garbage"); cat != "" || parent {
+		t.Fatalf("garbage path: got %q %v", cat, parent)
 	}
 }

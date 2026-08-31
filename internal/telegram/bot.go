@@ -12,12 +12,14 @@ import (
 
 	"github.com/rawizhere/gosift/internal/config"
 	"github.com/rawizhere/gosift/internal/httpclient"
+	"github.com/rawizhere/gosift/internal/parser"
 	"github.com/rawizhere/gosift/internal/repo"
 )
 
 type Bot struct {
 	bot      *telego.Bot
 	repo     *repo.Store
+	parser   *parser.Registry
 	cfg      *config.Config
 	log      *slog.Logger
 	hc       *httpclient.Client
@@ -26,7 +28,7 @@ type Bot struct {
 	stores   []string
 }
 
-func New(cfg *config.Config, store *repo.Store, log *slog.Logger, hc *httpclient.Client, storeNames []string) (*Bot, error) {
+func New(cfg *config.Config, store *repo.Store, parserReg *parser.Registry, log *slog.Logger, hc *httpclient.Client, storeNames []string) (*Bot, error) {
 	bot, err := telego.NewBot(cfg.TelegramBotToken,
 		telego.WithHTTPClient(hc.StandardClient()),
 		telego.WithLogger(slogAdapter{log}),
@@ -39,6 +41,7 @@ func New(cfg *config.Config, store *repo.Store, log *slog.Logger, hc *httpclient
 	return &Bot{
 		bot:      bot,
 		repo:     store,
+		parser:   parserReg,
 		cfg:      cfg,
 		log:      log,
 		hc:       hc,
@@ -87,8 +90,7 @@ func parseAllowed(raw string) map[int64]bool {
 	return m
 }
 
-// cdnHosts returns the ordered list of image CDN hosts, primary first,
-// without duplicates.
+// cdnHosts returns the image CDN hosts, primary first.
 func cdnHosts(cfg *config.Config) []string {
 	var out []string
 	seen := map[string]bool{}

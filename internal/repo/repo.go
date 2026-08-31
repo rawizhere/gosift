@@ -35,6 +35,7 @@ func (s *Store) CreateRule(ctx context.Context, r models.Rule) error {
 		ChatID:   r.ChatID,
 		Store:    r.Store,
 		Query:    r.Query,
+		Category: r.Category,
 		City:     r.City,
 		MinPrice: decString(r.MinPrice),
 		MaxPrice: decString(r.MaxPrice),
@@ -46,7 +47,7 @@ func (s *Store) ListRulesByUser(ctx context.Context, userID int64) ([]models.Rul
 	if err != nil {
 		return nil, err
 	}
-	return toRules(rows), nil
+	return toRuleRows(rows), nil
 }
 
 func (s *Store) ListEnabledRules(ctx context.Context) ([]models.Rule, error) {
@@ -54,7 +55,7 @@ func (s *Store) ListEnabledRules(ctx context.Context) ([]models.Rule, error) {
 	if err != nil {
 		return nil, err
 	}
-	return toRules(rows), nil
+	return toRuleRowsEnabled(rows), nil
 }
 
 func (s *Store) GetRule(ctx context.Context, id, userID int64) (models.Rule, error) {
@@ -62,12 +63,13 @@ func (s *Store) GetRule(ctx context.Context, id, userID int64) (models.Rule, err
 	if err != nil {
 		return models.Rule{}, err
 	}
-	return toRule(r), nil
+	return toRuleRowGet(r), nil
 }
 
 func (s *Store) UpdateRule(ctx context.Context, r models.Rule) error {
 	return s.q.UpdateRule(ctx, UpdateRuleParams{
 		Query:    r.Query,
+		Category: r.Category,
 		City:     r.City,
 		MinPrice: decString(r.MinPrice),
 		MaxPrice: decString(r.MaxPrice),
@@ -116,10 +118,7 @@ func (s *Store) DeleteDialogState(ctx context.Context, chatID int64) error {
 	return s.q.DeleteDialogState(ctx, chatID)
 }
 
-// ShouldNotifyOffer reports whether an offer should be sent to the chat:
-// true for a brand-new listing and for any later price drop, false for a
-// known listing at the same or higher price. The stored price is updated so
-// that the current listing price always reflects the last seen value.
+// ShouldNotifyOffer reports whether an offer is new or dropped in price.
 func (s *Store) ShouldNotifyOffer(ctx context.Context, chatID int64, key, price string) (bool, error) {
 	last, err := s.q.GetSentOffer(ctx, GetSentOfferParams{ChatID: chatID, OfferKey: key})
 	if errors.Is(err, sql.ErrNoRows) {
@@ -144,14 +143,14 @@ func (s *Store) ShouldNotifyOffer(ctx context.Context, chatID int64, key, price 
 		return false, nil
 	}
 	if newPrice.GreaterThan(oldPrice) {
-		// Price went up — keep following the listing, but don't spam.
+		// Price went up: keep following the listing.
 		return false, s.q.UpdateSentOfferPrice(ctx, UpdateSentOfferPriceParams{
 			LastPrice: price,
 			ChatID:    chatID,
 			OfferKey:  key,
 		})
 	}
-	// Price dropped — notify and remember the new price.
+	// Price dropped: notify and remember the new price.
 	if err := s.q.UpdateSentOfferPrice(ctx, UpdateSentOfferPriceParams{
 		LastPrice: price,
 		ChatID:    chatID,
@@ -176,21 +175,63 @@ func boolInt(v bool) int64 {
 	return 0
 }
 
-func toRules(rows []Rule) []models.Rule {
+func toRuleRows(rows []ListRulesByUserRow) []models.Rule {
 	out := make([]models.Rule, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, toRule(r))
+		out = append(out, toRuleRow(ruleRowFromList(r)))
 	}
 	return out
 }
 
-func toRule(r Rule) models.Rule {
+// toRuleRowsEnabled converts the enabled-rules rows.
+func toRuleRowsEnabled(rows []ListEnabledRulesRow) []models.Rule {
+	out := make([]models.Rule, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, toRuleRow(ruleRowFromEnabled(r)))
+	}
+	return out
+}
+
+func toRuleRowGet(r GetRuleRow) models.Rule {
+	return toRuleRow(ruleRowFromGet(r))
+}
+
+// ruleRow is the shape shared by the sqlc rules rows.
+type ruleRow struct {
+	ID        int64
+	UserID    int64
+	ChatID    int64
+	Store     string
+	Query     string
+	Category  string
+	City      string
+	MinPrice  sql.NullString
+	MaxPrice  sql.NullString
+	Enabled   int64
+	CreatedAt string
+	UpdatedAt string
+}
+
+func ruleRowFromList(r ListRulesByUserRow) ruleRow {
+	return ruleRow(r)
+}
+
+func ruleRowFromEnabled(r ListEnabledRulesRow) ruleRow {
+	return ruleRow(r)
+}
+
+func ruleRowFromGet(r GetRuleRow) ruleRow {
+	return ruleRow(r)
+}
+
+func toRuleRow(r ruleRow) models.Rule {
 	return models.Rule{
 		ID:        r.ID,
 		UserID:    r.UserID,
 		ChatID:    r.ChatID,
 		Store:     r.Store,
 		Query:     r.Query,
+		Category:  r.Category,
 		City:      r.City,
 		MinPrice:  toDec(r.MinPrice),
 		MaxPrice:  toDec(r.MaxPrice),

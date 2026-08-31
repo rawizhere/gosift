@@ -26,9 +26,7 @@ const (
 	maxCaptionLen = 1024
 )
 
-// SendCards sends offers to the chat. Offers with photos are sent as photo
-// messages (media group when there are several photos); the rest is batched
-// into plain text messages as before. Order of offers is preserved.
+// SendCards sends offers as photo or text messages.
 func (b *Bot) SendCards(ctx context.Context, chatID int64, offers []models.Offer) error {
 	var batch []string
 	flushText := func() error {
@@ -61,8 +59,7 @@ func (b *Bot) SendCards(ctx context.Context, chatID int64, offers []models.Offer
 	return flushText()
 }
 
-// makeTextCards joins card texts into one message, keeping it under the
-// Telegram message length limit.
+// makeTextCards joins card texts into one message.
 func makeTextCards(cards []string) string {
 	var sb strings.Builder
 	for i, card := range cards {
@@ -81,13 +78,11 @@ func makeTextCards(cards []string) string {
 	return sb.String()
 }
 
-// sendOfferWithImages downloads the offer photos, converts them to JPEG and
-// sends them with the card text as caption (a media group album when there are
-// several photos).
+// sendOfferWithImages downloads photos and sends them with the card caption.
 func (b *Bot) sendOfferWithImages(ctx context.Context, chatID int64, o models.Offer) error {
 	caption := truncateHTML(formatCard(o), maxCaptionLen)
 	jpegs := make([][]byte, 0, len(o.Images))
-	host := "" // resolved CDN host for this offer, cached across photos
+	host := "" // resolved CDN host for this offer
 	for _, imgURL := range o.Images {
 		data, err := b.fetchImage(ctx, imgURL, &host)
 		if err != nil {
@@ -132,10 +127,7 @@ func (b *Bot) sendOfferWithImages(ctx context.Context, chatID int64, o models.Of
 	return err
 }
 
-// fetchImage downloads an image from the primary CDN host, falling back to
-// the alternative hosts when the picture lives on another host (komissionki
-// spreads photos across several CDN hosts). The resolved host is cached for
-// the remaining photos of the same offer.
+// fetchImage downloads an image from any configured CDN host.
 func (b *Bot) fetchImage(ctx context.Context, imgURL string, resolvedHost *string) ([]byte, error) {
 	if *resolvedHost != "" {
 		return b.hc.GetBytes(ctx, withHost(imgURL, *resolvedHost))
@@ -152,7 +144,7 @@ func (b *Bot) fetchImage(ctx context.Context, imgURL string, resolvedHost *strin
 	return nil, lastErr
 }
 
-// withHost swaps the host of an absolute URL, keeping scheme and path.
+// withHost swaps the host of an absolute URL.
 func withHost(raw, host string) string {
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" {
@@ -162,8 +154,7 @@ func withHost(raw, host string) string {
 	return u.String()
 }
 
-// toJPEG converts webp (CDN serves only webp) to JPEG, which Telegram accepts
-// for photo uploads.
+// toJPEG converts webp to JPEG for Telegram uploads.
 func toJPEG(data []byte) ([]byte, error) {
 	img, err := webp.Decode(bytes.NewReader(data))
 	if err != nil {
@@ -176,8 +167,7 @@ func toJPEG(data []byte) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// truncateHTML truncates s to at most n runes while keeping HTML tags
-// balanced, so Telegram can still parse entities in the caption.
+// truncateHTML truncates s to n runes with balanced HTML tags.
 func truncateHTML(s string, n int) string {
 	runes := []rune(s)
 	if len(runes) <= n {
@@ -195,8 +185,7 @@ func truncateHTML(s string, n int) string {
 		for j < n && runes[j] != '>' {
 			j++
 		}
-		if j >= n { // tag won't fit into the limit — drop it entirely,
-			// a bare '<' in the text would break Telegram's HTML parser.
+		if j >= n { // drop the tag; a bare '<' breaks Telegram's HTML parser
 			return closeTags(sb.String(), stack)
 		}
 		tag := string(runes[i : j+1])
@@ -216,7 +205,7 @@ func truncateHTML(s string, n int) string {
 	return closeTags(sb.String(), stack)
 }
 
-// closeTags appends closing tags for all still-open tags, newest first.
+// closeTags appends closing tags for all open tags.
 func closeTags(s string, stack []string) string {
 	if len(stack) == 0 {
 		return s
@@ -261,6 +250,9 @@ func (b *Bot) SendAlert(ctx context.Context, chatID int64, store string, err err
 func formatCard(o models.Offer) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "<b>Магазин:</b> %s\n", html.EscapeString(o.Store))
+	if o.Category != "" {
+		fmt.Fprintf(&sb, "<b>Категория:</b> %s\n", html.EscapeString(o.Category))
+	}
 	fmt.Fprintf(&sb, "<b>Товар:</b> %s\n", html.EscapeString(o.Title))
 	price := formatPrice(o.Price)
 	if o.OldPrice != nil {

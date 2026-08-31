@@ -15,6 +15,7 @@ type SearchOptions struct {
 type Parser interface {
 	Name() string
 	Search(ctx context.Context, rule models.Rule, opts SearchOptions) ([]models.Offer, error)
+	Categories(ctx context.Context) ([]models.Category, error)
 }
 
 type Registry struct {
@@ -48,4 +49,13 @@ func (r *Registry) Names() []string {
 		names = append(names, name)
 	}
 	return names
+}
+
+// CategoryPicker returns the store category tree.
+func (r *Registry) CategoryPicker(ctx context.Context, store string) ([]models.Category, error) {
+	p, err := r.Get(store)
+	if err != nil {
+		return nil, err
+	}
+	return p.Categories(ctx)
 }

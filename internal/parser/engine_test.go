@@ -25,6 +25,10 @@ func (f *fakeParser) Search(_ context.Context, _ models.Rule, _ SearchOptions) (
 	return f.offers, nil
 }
 
+func (f *fakeParser) Categories(_ context.Context) ([]models.Category, error) {
+	return nil, nil
+}
+
 type fakeSender struct {
 	sent       []models.Offer
 	alertCount int
@@ -88,7 +92,7 @@ func TestEngineSendsOnlyNewAndPriceDrops(t *testing.T) {
 	ctx := context.Background()
 	addRule(t, store)
 
-	// cycle 1: two new offers -> both sent
+	// cycle 1: two new offers send both
 	fp.offers = []models.Offer{offerWithPrice("b1", 1000), offerWithPrice("b2", 2000)}
 	if err := engine.RunOnce(ctx); err != nil {
 		t.Fatal(err)
@@ -97,7 +101,7 @@ func TestEngineSendsOnlyNewAndPriceDrops(t *testing.T) {
 		t.Fatalf("cycle 1: sent %d, want 2", len(sender.sent))
 	}
 
-	// cycle 2: same listings -> nothing new
+	// cycle 2: same listings send nothing
 	fp.offers = []models.Offer{offerWithPrice("b1", 1000), offerWithPrice("b2", 2000)}
 	if err := engine.RunOnce(ctx); err != nil {
 		t.Fatal(err)
@@ -106,7 +110,7 @@ func TestEngineSendsOnlyNewAndPriceDrops(t *testing.T) {
 		t.Fatalf("cycle 2: sent %d, want still 2 (no resend)", len(sender.sent))
 	}
 
-	// cycle 3: b2 dropped, b3 is new, b1 unchanged -> b2 and b3
+	// cycle 3: price drop and new offer send
 	fp.offers = []models.Offer{
 		offerWithPrice("b1", 1000), // unchanged -> no resend
 		offerWithPrice("b2", 1500), // dropped 2000 -> send
@@ -124,7 +128,7 @@ func TestEngineSendsOnlyNewAndPriceDrops(t *testing.T) {
 	}
 }
 
-// mapKeys returns the Offer keys of all captured sends.
+// mapKeys returns the keys of all captured sends.
 func mapKeys(offers []models.Offer) []string {
 	keys := make([]string, 0, len(offers))
 	for _, o := range offers {
@@ -137,17 +141,17 @@ func TestMatchesSearchesDescription(t *testing.T) {
 	e := &Engine{}
 	rule := models.Rule{Query: "iphone -трещина"}
 
-	// positive word only in description
+	// positive word only in the description
 	o := models.Offer{Title: "Apple iPhone Air 12/256", Description: "в комплекте коробка, чехол"}
 	if !e.matches(rule, o) {
 		t.Errorf("expected match via description")
 	}
-	// negative word only in description must reject
+	// negative word only in the description rejects
 	o2 := models.Offer{Title: "Apple iPhone Air 12/256", Description: "на корпусе трещина"}
 	if e.matches(rule, o2) {
 		t.Errorf("expected rejection via description")
 	}
-	// no match anywhere
+	// no match
 	o3 := models.Offer{Title: "Ноутбук Lenovo", Description: "б/у"}
 	if e.matches(rule, o3) {
 		t.Errorf("expected no match")

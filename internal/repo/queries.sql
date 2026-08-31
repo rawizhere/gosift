@@ -3,23 +3,23 @@ INSERT OR IGNORE INTO users (user_id, username, first_name, chat_id)
 VALUES (?, ?, ?, ?);
 
 -- name: CreateRule :exec
-INSERT INTO rules (user_id, chat_id, store, query, city, min_price, max_price)
-VALUES (?, ?, ?, ?, ?, ?, ?);
+INSERT INTO rules (user_id, chat_id, store, query, category, city, min_price, max_price)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: ListRulesByUser :many
-SELECT id, user_id, chat_id, store, query, city, min_price, max_price, enabled, created_at, updated_at
+SELECT id, user_id, chat_id, store, query, category, city, min_price, max_price, enabled, created_at, updated_at
 FROM rules WHERE user_id = ? ORDER BY id;
 
 -- name: ListEnabledRules :many
-SELECT id, user_id, chat_id, store, query, city, min_price, max_price, enabled, created_at, updated_at
+SELECT id, user_id, chat_id, store, query, category, city, min_price, max_price, enabled, created_at, updated_at
 FROM rules WHERE enabled = 1 ORDER BY id;
 
 -- name: GetRule :one
-SELECT id, user_id, chat_id, store, query, city, min_price, max_price, enabled, created_at, updated_at
+SELECT id, user_id, chat_id, store, query, category, city, min_price, max_price, enabled, created_at, updated_at
 FROM rules WHERE id = ? AND user_id = ?;
 
 -- name: UpdateRule :exec
-UPDATE rules SET query = ?, city = ?, min_price = ?, max_price = ?, updated_at = datetime('now')
+UPDATE rules SET query = ?, category = ?, city = ?, min_price = ?, max_price = ?, updated_at = datetime('now')
 WHERE id = ? AND user_id = ?;
 
 -- name: SetRuleEnabled :exec

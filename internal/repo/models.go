@@ -32,6 +32,7 @@ type Rule struct {
 	Enabled   int64
 	CreatedAt string
 	UpdatedAt string
+	Category  string
 }
 
 type SentOffer struct {

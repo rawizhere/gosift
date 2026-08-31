@@ -46,7 +46,7 @@ type apiItem struct {
 	Filial          []apiFilial  `json:"filial"`
 	Category        apiCategory  `json:"category"`
 	ParentCategory  apiCategory  `json:"parentCategory"`
-	// PhotosResized maps photo ID -> position in the gallery (0 = main photo).
+	// PhotosResized maps photo IDs to gallery positions.
 	PhotosResized map[string]int `json:"photosResized"`
 }
 
@@ -59,7 +59,9 @@ type apiFilial struct {
 }
 
 type apiCategory struct {
-	Code string `json:"code"`
+	Code  string `json:"code"`
+	Title string `json:"title"`
+	Name  string `json:"name"`
 }
 
 type Parser struct {
@@ -84,20 +86,14 @@ func (p *Parser) Search(ctx context.Context, rule models.Rule, opts parser.Searc
 	}
 	endpoint := p.apiURL + "/api/product-filter/filter"
 
-	// The first page doubles as the handshake: the API mints the session token
-	// ("sa") inside the response. When price filters narrow the result set, the
-	// API returns an empty sa, so fall back to an unfiltered page for the token —
-	// that token is valid for filtered pagination too.
+	// The first page mints the session token; price filters may return none.
 	first, sa, err := p.handshake(ctx, endpoint, query, rule)
 	if err != nil {
 		return nil, fmt.Errorf("handshake: %w", err)
 	}
 	offers := offersFromItems(p.baseURL, p.cdnURL, first, opts.Limit)
 
-	// Pagination needs a valid session token, but the API only mints one for
-	// unfiltered searches. A token borrowed from an unfiltered request does not
-	// page the filtered set correctly, so price-filtered rules stay on the
-	// first page (36 items — more than the default PARSE_LIMIT).
+	// Pagination needs a token the API only mints for unfiltered searches.
 	priceFiltered := rule.MinPrice != nil || rule.MaxPrice != nil
 	for page := 2; !priceFiltered && len(offers) < opts.Limit; page++ {
 		raw, nextSA, err := p.fetchPage(ctx, endpoint, query, page, sa, rule)
@@ -136,12 +132,10 @@ func (p *Parser) Search(ctx context.Context, rule models.Rule, opts parser.Searc
 	return offers, nil
 }
 
-// handshake fetches the first page and mints a session token, reusing the
-// page-1 items so Search never fetches them twice. An empty token is not an
-// error when the query has no results; a broken response (results but no token)
-// is still reported so the alerting path fires.
+// handshake fetches page one and mints a session token.
 func (p *Parser) handshake(ctx context.Context, endpoint, query string, rule models.Rule) ([]apiItem, string, error) {
-	resp, err := p.get(ctx, endpoint, query, 1, "", rule, true)
+	category, isParent := ruleCategoryParams(rule.Category)
+	resp, err := p.get(ctx, endpoint, query, 1, "", rule, true, category, isParent)
 	if err != nil {
 		return nil, "", err
 	}
@@ -149,7 +143,7 @@ func (p *Parser) handshake(ctx context.Context, endpoint, query string, rule mod
 		return resp.Data.Items, resp.Data.SA, nil
 	}
 	if rule.MinPrice != nil || rule.MaxPrice != nil {
-		plain, err := p.get(ctx, endpoint, query, 1, "", rule, false)
+		plain, err := p.get(ctx, endpoint, query, 1, "", rule, false, category, isParent)
 		if err != nil {
 			return nil, "", err
 		}
@@ -164,20 +158,29 @@ func (p *Parser) handshake(ctx context.Context, endpoint, query string, rule mod
 }
 
 func (p *Parser) fetchPage(ctx context.Context, endpoint, query string, page int, sa string, rule models.Rule) ([]apiItem, string, error) {
-	resp, err := p.get(ctx, endpoint, query, page, sa, rule, true)
+	cat, parent := ruleCategoryParams(rule.Category)
+	resp, err := p.get(ctx, endpoint, query, page, sa, rule, true, cat, parent)
 	if err != nil {
 		return nil, "", err
 	}
 	return resp.Data.Items, resp.Data.SA, nil
 }
 
-func (p *Parser) get(ctx context.Context, endpoint, query string, page int, sa string, rule models.Rule, usePrice bool) (*apiResponse, error) {
+func (p *Parser) get(ctx context.Context, endpoint, query string, page int, sa string, rule models.Rule, usePrice bool, category string, isParent bool) (*apiResponse, error) {
 	params := url.Values{}
-	params.Set("search", query)
+	if query != "" {
+		params.Set("search", query)
+	}
 	params.Set("limit", fmt.Sprintf("%d", pageSize))
 	params.Set("page", fmt.Sprintf("%d", page))
 	params.Set("sort", "desc")
 	params.Set("fieldSort", "createdAt")
+	if category != "" {
+		params.Set("category", category)
+	}
+	if isParent {
+		params.Set("isParentCategory", "1")
+	}
 	if usePrice {
 		if rule.MinPrice != nil {
 			params.Set("priceFrom", rule.MinPrice.String())
@@ -246,9 +249,14 @@ func toOffer(baseURL, cdnURL string, item apiItem) models.Offer {
 		}
 	}
 	u := fmt.Sprintf("%s/catalog/%s/%s/%s/", baseURL, item.ParentCategory.Code, item.Category.Code, item.Code)
+	catTitle := item.Category.Title
+	if catTitle == "" {
+		catTitle = item.Category.Name
+	}
 	return models.Offer{
 		Key:         item.BarcodeShopUniq,
 		Store:       "komissionki",
+		Category:    catTitle,
 		Title:       item.Name,
 		Description: strings.TrimSpace(item.Description),
 		URL:         u,
@@ -263,8 +271,7 @@ func toOffer(baseURL, cdnURL string, item apiItem) models.Offer {
 
 const maxAlbumPhotos = 10
 
-// imageURLs builds CDN URLs for product photos ordered by gallery position
-// (position 0 is the main photo), capped at Telegram album size.
+// imageURLs builds CDN URLs for product photos by gallery position.
 func imageURLs(cdnURL string, photos map[string]int) []string {
 	if cdnURL == "" || len(photos) == 0 {
 		return nil
@@ -288,4 +295,26 @@ func imageURLs(cdnURL string, photos map[string]int) []string {
 		out = append(out, fmt.Sprintf("%s/%s/%s_XL.webp", cdn, id, id))
 	}
 	return out
+}
+
+// ruleCategoryParams maps a rule category path to API filter params.
+func ruleCategoryParams(path string) (category string, isParent bool) {
+	if path == "" {
+		return "", false
+	}
+	parts := strings.SplitN(path, ":", 2)
+	if len(parts) != 2 {
+		return "", false
+	}
+	kind, id := parts[0], parts[1]
+	if id == "" {
+		return "", false
+	}
+	switch kind {
+	case "parent":
+		return id, true
+	case "child":
+		return id, false
+	}
+	return "", false
 }

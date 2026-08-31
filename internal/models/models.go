@@ -12,6 +12,7 @@ type Rule struct {
 	ChatID    int64
 	Store     string
 	Query     string
+	Category  string
 	City      string
 	MinPrice  *decimal.Decimal
 	MaxPrice  *decimal.Decimal
@@ -23,6 +24,7 @@ type Rule struct {
 type Offer struct {
 	Key         string
 	Store       string
+	Category    string
 	Title       string
 	Description string
 	URL         string
@@ -40,4 +42,15 @@ type User struct {
 	FirstName string
 	ChatID    int64
 	CreatedAt time.Time
+}
+
+// Category is a store category node; ParentExtCode links a child to its parent.
+type Category struct {
+	ID            int64
+	Title         string
+	Code          string
+	ExtCode       string
+	ParentExtCode string
+	CountProduct  int
+	HasChildren   bool
 }

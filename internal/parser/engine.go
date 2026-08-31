@@ -71,9 +71,7 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 		if len(unique) == 0 {
 			continue
 		}
-		// Persistent dedup: only brand-new listings and price drops reach the
-		// chat; already-known listings at the same or higher price are kept in
-		// the DB silently.
+		// Persistent dedup: send only new listings and price drops.
 		toSend := make([]models.Offer, 0, len(unique))
 		for _, o := range unique {
 			should, err := e.repo.ShouldNotifyOffer(ctx, rule.ChatID, offerKey(o), o.Price.String())
@@ -148,8 +146,7 @@ func (e *Engine) matches(rule models.Rule, offer models.Offer) bool {
 		return false
 	}
 	pos, neg := splitQuery(rule.Query)
-	// Search both the title and the description so that rules can match words
-	// that only appear in the listing text.
+	// Match words in both the title and the description.
 	text := strings.ToLower(offer.Title + " " + offer.Description)
 	if pos != "" && !strings.Contains(text, pos) {
 		return false

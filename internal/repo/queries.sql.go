@@ -11,8 +11,8 @@ import (
 )
 
 const createRule = `-- name: CreateRule :exec
-INSERT INTO rules (user_id, chat_id, store, query, city, min_price, max_price)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO rules (user_id, chat_id, store, query, category, city, min_price, max_price)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateRuleParams struct {
@@ -20,6 +20,7 @@ type CreateRuleParams struct {
 	ChatID   int64
 	Store    string
 	Query    string
+	Category string
 	City     string
 	MinPrice sql.NullString
 	MaxPrice sql.NullString
@@ -31,6 +32,7 @@ func (q *Queries) CreateRule(ctx context.Context, arg CreateRuleParams) error {
 		arg.ChatID,
 		arg.Store,
 		arg.Query,
+		arg.Category,
 		arg.City,
 		arg.MinPrice,
 		arg.MaxPrice,
@@ -100,7 +102,7 @@ func (q *Queries) GetDialogState(ctx context.Context, chatID int64) (DialogState
 }
 
 const getRule = `-- name: GetRule :one
-SELECT id, user_id, chat_id, store, query, city, min_price, max_price, enabled, created_at, updated_at
+SELECT id, user_id, chat_id, store, query, category, city, min_price, max_price, enabled, created_at, updated_at
 FROM rules WHERE id = ? AND user_id = ?
 `
 
@@ -109,15 +111,31 @@ type GetRuleParams struct {
 	UserID int64
 }
 
-func (q *Queries) GetRule(ctx context.Context, arg GetRuleParams) (Rule, error) {
+type GetRuleRow struct {
+	ID        int64
+	UserID    int64
+	ChatID    int64
+	Store     string
+	Query     string
+	Category  string
+	City      string
+	MinPrice  sql.NullString
+	MaxPrice  sql.NullString
+	Enabled   int64
+	CreatedAt string
+	UpdatedAt string
+}
+
+func (q *Queries) GetRule(ctx context.Context, arg GetRuleParams) (GetRuleRow, error) {
 	row := q.db.QueryRowContext(ctx, getRule, arg.ID, arg.UserID)
-	var i Rule
+	var i GetRuleRow
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
 		&i.ChatID,
 		&i.Store,
 		&i.Query,
+		&i.Category,
 		&i.City,
 		&i.MinPrice,
 		&i.MaxPrice,
@@ -172,25 +190,41 @@ func (q *Queries) InsertSentOffer(ctx context.Context, arg InsertSentOfferParams
 }
 
 const listEnabledRules = `-- name: ListEnabledRules :many
-SELECT id, user_id, chat_id, store, query, city, min_price, max_price, enabled, created_at, updated_at
+SELECT id, user_id, chat_id, store, query, category, city, min_price, max_price, enabled, created_at, updated_at
 FROM rules WHERE enabled = 1 ORDER BY id
 `
 
-func (q *Queries) ListEnabledRules(ctx context.Context) ([]Rule, error) {
+type ListEnabledRulesRow struct {
+	ID        int64
+	UserID    int64
+	ChatID    int64
+	Store     string
+	Query     string
+	Category  string
+	City      string
+	MinPrice  sql.NullString
+	MaxPrice  sql.NullString
+	Enabled   int64
+	CreatedAt string
+	UpdatedAt string
+}
+
+func (q *Queries) ListEnabledRules(ctx context.Context) ([]ListEnabledRulesRow, error) {
 	rows, err := q.db.QueryContext(ctx, listEnabledRules)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Rule{}
+	items := []ListEnabledRulesRow{}
 	for rows.Next() {
-		var i Rule
+		var i ListEnabledRulesRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.UserID,
 			&i.ChatID,
 			&i.Store,
 			&i.Query,
+			&i.Category,
 			&i.City,
 			&i.MinPrice,
 			&i.MaxPrice,
@@ -212,25 +246,41 @@ func (q *Queries) ListEnabledRules(ctx context.Context) ([]Rule, error) {
 }
 
 const listRulesByUser = `-- name: ListRulesByUser :many
-SELECT id, user_id, chat_id, store, query, city, min_price, max_price, enabled, created_at, updated_at
+SELECT id, user_id, chat_id, store, query, category, city, min_price, max_price, enabled, created_at, updated_at
 FROM rules WHERE user_id = ? ORDER BY id
 `
 
-func (q *Queries) ListRulesByUser(ctx context.Context, userID int64) ([]Rule, error) {
+type ListRulesByUserRow struct {
+	ID        int64
+	UserID    int64
+	ChatID    int64
+	Store     string
+	Query     string
+	Category  string
+	City      string
+	MinPrice  sql.NullString
+	MaxPrice  sql.NullString
+	Enabled   int64
+	CreatedAt string
+	UpdatedAt string
+}
+
+func (q *Queries) ListRulesByUser(ctx context.Context, userID int64) ([]ListRulesByUserRow, error) {
 	rows, err := q.db.QueryContext(ctx, listRulesByUser, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Rule{}
+	items := []ListRulesByUserRow{}
 	for rows.Next() {
-		var i Rule
+		var i ListRulesByUserRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.UserID,
 			&i.ChatID,
 			&i.Store,
 			&i.Query,
+			&i.Category,
 			&i.City,
 			&i.MinPrice,
 			&i.MaxPrice,
@@ -282,12 +332,13 @@ func (q *Queries) SetSetting(ctx context.Context, arg SetSettingParams) error {
 }
 
 const updateRule = `-- name: UpdateRule :exec
-UPDATE rules SET query = ?, city = ?, min_price = ?, max_price = ?, updated_at = datetime('now')
+UPDATE rules SET query = ?, category = ?, city = ?, min_price = ?, max_price = ?, updated_at = datetime('now')
 WHERE id = ? AND user_id = ?
 `
 
 type UpdateRuleParams struct {
 	Query    string
+	Category string
 	City     string
 	MinPrice sql.NullString
 	MaxPrice sql.NullString
@@ -298,6 +349,7 @@ type UpdateRuleParams struct {
 func (q *Queries) UpdateRule(ctx context.Context, arg UpdateRuleParams) error {
 	_, err := q.db.ExecContext(ctx, updateRule,
 		arg.Query,
+		arg.Category,
 		arg.City,
 		arg.MinPrice,
 		arg.MaxPrice,

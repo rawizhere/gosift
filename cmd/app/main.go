@@ -51,7 +51,7 @@ func run() error {
 			return err
 		}
 	}
-	bot, err := telegram.New(cfg, store, log, hc, registry.Names())
+	bot, err := telegram.New(cfg, store, registry, log, hc, registry.Names())
 	if err != nil {
 		return err
 	}
