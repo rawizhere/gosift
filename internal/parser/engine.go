@@ -131,12 +131,14 @@ func (e *Engine) matches(rule models.Rule, offer models.Offer) bool {
 		return false
 	}
 	pos, neg := splitQuery(rule.Query)
-	title := strings.ToLower(offer.Title)
-	if pos != "" && !strings.Contains(title, pos) {
+	// Search both the title and the description so that rules can match words
+	// that only appear in the listing text.
+	text := strings.ToLower(offer.Title + " " + offer.Description)
+	if pos != "" && !strings.Contains(text, pos) {
 		return false
 	}
 	for _, n := range neg {
-		if strings.Contains(title, n) {
+		if strings.Contains(text, n) {
 			return false
 		}
 	}

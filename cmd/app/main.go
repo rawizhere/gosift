@@ -47,7 +47,7 @@ func run() error {
 	}
 	registry := parser.NewRegistry()
 	if cfg.StoreEnabled {
-		if err := registry.Register(komissionki.New(hc, cfg.StoreBaseURL, cfg.StoreAPIURL)); err != nil {
+		if err := registry.Register(komissionki.New(hc, cfg.StoreBaseURL, cfg.StoreAPIURL, cfg.StoreCDNURL)); err != nil {
 			return err
 		}
 	}

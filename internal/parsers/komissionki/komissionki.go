@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -38,12 +39,15 @@ type apiItem struct {
 	Code            string       `json:"code"`
 	BarcodeShopUniq string       `json:"barcodeShopUniq"`
 	Name            string       `json:"name"`
+	Description     string       `json:"description"`
 	Price           json.Number  `json:"price"`
 	OldPrice        *json.Number `json:"oldPrice"`
 	City            []apiCity    `json:"city"`
 	Filial          []apiFilial  `json:"filial"`
 	Category        apiCategory  `json:"category"`
 	ParentCategory  apiCategory  `json:"parentCategory"`
+	// PhotosResized maps photo ID -> position in the gallery (0 = main photo).
+	PhotosResized map[string]int `json:"photosResized"`
 }
 
 type apiCity struct {
@@ -62,10 +66,11 @@ type Parser struct {
 	client  *httpclient.Client
 	baseURL string
 	apiURL  string
+	cdnURL  string
 }
 
-func New(client *httpclient.Client, baseURL, apiURL string) *Parser {
-	return &Parser{client: client, baseURL: baseURL, apiURL: apiURL}
+func New(client *httpclient.Client, baseURL, apiURL, cdnURL string) *Parser {
+	return &Parser{client: client, baseURL: baseURL, apiURL: apiURL, cdnURL: cdnURL}
 }
 
 func (p *Parser) Name() string {
@@ -78,18 +83,30 @@ func (p *Parser) Search(ctx context.Context, rule models.Rule, opts parser.Searc
 		query = rule.Query
 	}
 	endpoint := p.apiURL + "/api/product-filter/filter"
-	sa, err := p.handshake(ctx, endpoint, query, rule)
+
+	// The first page doubles as the handshake: the API mints the session token
+	// ("sa") inside the response. When price filters narrow the result set, the
+	// API returns an empty sa, so fall back to an unfiltered page for the token —
+	// that token is valid for filtered pagination too.
+	first, sa, err := p.handshake(ctx, endpoint, query, rule)
 	if err != nil {
 		return nil, fmt.Errorf("handshake: %w", err)
 	}
-	var offers []models.Offer
-	for page := 1; len(offers) < opts.Limit; page++ {
+	offers := offersFromItems(p.baseURL, p.cdnURL, first, opts.Limit)
+
+	// Pagination needs a valid session token, but the API only mints one for
+	// unfiltered searches. A token borrowed from an unfiltered request does not
+	// page the filtered set correctly, so price-filtered rules stay on the
+	// first page (36 items — more than the default PARSE_LIMIT).
+	priceFiltered := rule.MinPrice != nil || rule.MaxPrice != nil
+	for page := 2; !priceFiltered && len(offers) < opts.Limit; page++ {
 		raw, nextSA, err := p.fetchPage(ctx, endpoint, query, page, sa, rule)
 		if err != nil {
 			if !errors.Is(err, errUnauthorized) {
 				return nil, err
 			}
-			sa, err = p.handshake(ctx, endpoint, query, rule)
+			// Session expired: re-handshake and retry the page once.
+			_, sa, err = p.handshake(ctx, endpoint, query, rule)
 			if err != nil {
 				return nil, err
 			}
@@ -100,11 +117,12 @@ func (p *Parser) Search(ctx context.Context, rule models.Rule, opts parser.Searc
 		}
 		sa = nextSA
 		if len(raw) == 0 {
-			reSA, err := p.handshake(ctx, endpoint, query, rule)
+			_, reSA, err := p.handshake(ctx, endpoint, query, rule)
 			if err != nil {
 				break
 			}
-			raw, nextSA, err = p.fetchPage(ctx, endpoint, query, page, reSA, rule)
+			sa = reSA
+			raw, nextSA, err = p.fetchPage(ctx, endpoint, query, page, sa, rule)
 			if err != nil {
 				return nil, err
 			}
@@ -113,47 +131,60 @@ func (p *Parser) Search(ctx context.Context, rule models.Rule, opts parser.Searc
 				break
 			}
 		}
-		for _, item := range raw {
-			offers = append(offers, toOffer(p.baseURL, item))
-			if len(offers) >= opts.Limit {
-				break
-			}
-		}
+		offers = append(offers, offersFromItems(p.baseURL, p.cdnURL, raw, opts.Limit)...)
 	}
 	return offers, nil
 }
 
-func (p *Parser) handshake(ctx context.Context, endpoint, query string, rule models.Rule) (string, error) {
-	resp, err := p.get(ctx, endpoint, query, 1, "", rule)
+// handshake fetches the first page and mints a session token, reusing the
+// page-1 items so Search never fetches them twice. An empty token is not an
+// error when the query has no results; a broken response (results but no token)
+// is still reported so the alerting path fires.
+func (p *Parser) handshake(ctx context.Context, endpoint, query string, rule models.Rule) ([]apiItem, string, error) {
+	resp, err := p.get(ctx, endpoint, query, 1, "", rule, true)
 	if err != nil {
-		return "", err
+		return nil, "", err
 	}
-	if resp.Data.SA == "" {
-		return "", fmt.Errorf("empty sa token")
+	if resp.Data.SA != "" {
+		return resp.Data.Items, resp.Data.SA, nil
 	}
-	return resp.Data.SA, nil
+	if rule.MinPrice != nil || rule.MaxPrice != nil {
+		plain, err := p.get(ctx, endpoint, query, 1, "", rule, false)
+		if err != nil {
+			return nil, "", err
+		}
+		if plain.Data.SA != "" {
+			return resp.Data.Items, plain.Data.SA, nil
+		}
+	}
+	if resp.Data.Total > 0 && len(resp.Data.Items) == 0 {
+		return nil, "", fmt.Errorf("empty sa token")
+	}
+	return resp.Data.Items, "", nil // zero-result query
 }
 
 func (p *Parser) fetchPage(ctx context.Context, endpoint, query string, page int, sa string, rule models.Rule) ([]apiItem, string, error) {
-	resp, err := p.get(ctx, endpoint, query, page, sa, rule)
+	resp, err := p.get(ctx, endpoint, query, page, sa, rule, true)
 	if err != nil {
 		return nil, "", err
 	}
 	return resp.Data.Items, resp.Data.SA, nil
 }
 
-func (p *Parser) get(ctx context.Context, endpoint, query string, page int, sa string, rule models.Rule) (*apiResponse, error) {
+func (p *Parser) get(ctx context.Context, endpoint, query string, page int, sa string, rule models.Rule, usePrice bool) (*apiResponse, error) {
 	params := url.Values{}
 	params.Set("search", query)
 	params.Set("limit", fmt.Sprintf("%d", pageSize))
 	params.Set("page", fmt.Sprintf("%d", page))
 	params.Set("sort", "desc")
 	params.Set("fieldSort", "createdAt")
-	if rule.MinPrice != nil {
-		params.Set("priceFrom", rule.MinPrice.String())
-	}
-	if rule.MaxPrice != nil {
-		params.Set("priceTo", rule.MaxPrice.String())
+	if usePrice {
+		if rule.MinPrice != nil {
+			params.Set("priceFrom", rule.MinPrice.String())
+		}
+		if rule.MaxPrice != nil {
+			params.Set("priceTo", rule.MaxPrice.String())
+		}
 	}
 	if sa != "" {
 		params.Set("sa", sa)
@@ -180,7 +211,19 @@ func (p *Parser) get(ctx context.Context, endpoint, query string, page int, sa s
 	return &out, nil
 }
 
-func toOffer(baseURL string, item apiItem) models.Offer {
+func offersFromItems(baseURL, cdnURL string, items []apiItem, limit int) []models.Offer {
+	out := make([]models.Offer, 0, len(items))
+	for _, item := range items {
+		offer := toOffer(baseURL, cdnURL, item)
+		out = append(out, offer)
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out
+}
+
+func toOffer(baseURL, cdnURL string, item apiItem) models.Offer {
 	available := false
 	for _, f := range item.Filial {
 		if f.Balance > 0 {
@@ -204,14 +247,45 @@ func toOffer(baseURL string, item apiItem) models.Offer {
 	}
 	u := fmt.Sprintf("%s/catalog/%s/%s/%s/", baseURL, item.ParentCategory.Code, item.Category.Code, item.Code)
 	return models.Offer{
-		Key:       item.BarcodeShopUniq,
-		Store:     "komissionki",
-		Title:     item.Name,
-		URL:       u,
-		Price:     price,
-		OldPrice:  oldPrice,
-		City:      strings.TrimSpace(city),
-		Available: available,
-		ParsedAt:  time.Now(),
+		Key:         item.BarcodeShopUniq,
+		Store:       "komissionki",
+		Title:       item.Name,
+		Description: strings.TrimSpace(item.Description),
+		URL:         u,
+		Price:       price,
+		OldPrice:    oldPrice,
+		City:        strings.TrimSpace(city),
+		Available:   available,
+		Images:      imageURLs(cdnURL, item.PhotosResized),
+		ParsedAt:    time.Now(),
 	}
+}
+
+const maxAlbumPhotos = 10
+
+// imageURLs builds CDN URLs for product photos ordered by gallery position
+// (position 0 is the main photo), capped at Telegram album size.
+func imageURLs(cdnURL string, photos map[string]int) []string {
+	if cdnURL == "" || len(photos) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(photos))
+	for id := range photos {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool {
+		if photos[ids[i]] != photos[ids[j]] {
+			return photos[ids[i]] < photos[ids[j]]
+		}
+		return ids[i] < ids[j]
+	})
+	cdn := strings.TrimRight(cdnURL, "/")
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if len(out) >= maxAlbumPhotos {
+			break
+		}
+		out = append(out, fmt.Sprintf("%s/%s/%s_XL.webp", cdn, id, id))
+	}
+	return out
 }

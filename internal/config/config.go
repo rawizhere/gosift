@@ -25,6 +25,8 @@ type Config struct {
 	UserAgent            string        `env:"USER_AGENT"`
 	StoreBaseURL         string        `env:"STORE_KOMISSIONKI_BASE_URL" envDefault:"https://komissionki.ru"`
 	StoreAPIURL          string        `env:"STORE_KOMISSIONKI_API_URL" envDefault:"https://saf.komissionki.ru"`
+	StoreCDNURL          string        `env:"STORE_KOMISSIONKI_CDN_URL" envDefault:"https://c.komissionki.ru"`
+	StoreCDNFallbacks    string        `env:"STORE_KOMISSIONKI_CDN_FALLBACKS" envDefault:"https://cdny.komissionki.ru"`
 	StoreEnabled         bool          `env:"STORE_KOMISSIONKI_ENABLED" envDefault:"true"`
 	StoreRPS             float64       `env:"STORE_KOMISSIONKI_RPS" envDefault:"0.5"`
 }

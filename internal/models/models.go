@@ -21,15 +21,17 @@ type Rule struct {
 }
 
 type Offer struct {
-	Key       string
-	Store     string
-	Title     string
-	URL       string
-	Price     decimal.Decimal
-	OldPrice  *decimal.Decimal
-	City      string
-	Available bool
-	ParsedAt  time.Time
+	Key         string
+	Store       string
+	Title       string
+	Description string
+	URL         string
+	Price       decimal.Decimal
+	OldPrice    *decimal.Decimal
+	City        string
+	Available   bool
+	Images      []string
+	ParsedAt    time.Time
 }
 
 type User struct {

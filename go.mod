@@ -10,6 +10,7 @@ require (
 	github.com/mymmrac/telego v1.12.1
 	github.com/pressly/goose/v3 v3.27.3
 	github.com/shopspring/decimal v1.4.0
+	golang.org/x/image v0.45.0
 	golang.org/x/sync v0.22.0
 	golang.org/x/text v0.41.0
 	golang.org/x/time v0.15.0

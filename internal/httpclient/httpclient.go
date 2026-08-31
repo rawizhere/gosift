@@ -3,6 +3,7 @@ package httpclient
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 
@@ -11,6 +12,9 @@ import (
 
 	"github.com/rawizhere/gosift/internal/config"
 )
+
+// maxImageBytes caps a single downloaded image (Telegram allows 10 MB).
+const maxImageBytes = 10 << 20
 
 type Client struct {
 	rc       *retryablehttp.Client
@@ -62,4 +66,29 @@ func (c *Client) Do(ctx context.Context, req *retryablehttp.Request, store strin
 		return nil, err
 	}
 	return c.rc.Do(req)
+}
+
+// GetBytes downloads a small payload (image, etc.) with retries but without the
+// per-store rate limiter. Intended for static CDN content.
+func (c *Client) GetBytes(ctx context.Context, url string) ([]byte, error) {
+	req, err := retryablehttp.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.rc.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("get %s: status %d", url, resp.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxImageBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxImageBytes {
+		return nil, fmt.Errorf("get %s: payload too large", url)
+	}
+	return data, nil
 }

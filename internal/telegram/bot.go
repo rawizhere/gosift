@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -15,12 +16,14 @@ import (
 )
 
 type Bot struct {
-	bot     *telego.Bot
-	repo    *repo.Store
-	cfg     *config.Config
-	log     *slog.Logger
-	allowed map[int64]bool
-	stores  []string
+	bot      *telego.Bot
+	repo     *repo.Store
+	cfg      *config.Config
+	log      *slog.Logger
+	hc       *httpclient.Client
+	cdnHosts []string
+	allowed  map[int64]bool
+	stores   []string
 }
 
 func New(cfg *config.Config, store *repo.Store, log *slog.Logger, hc *httpclient.Client, storeNames []string) (*Bot, error) {
@@ -34,12 +37,14 @@ func New(cfg *config.Config, store *repo.Store, log *slog.Logger, hc *httpclient
 	stores := make([]string, len(storeNames))
 	copy(stores, storeNames)
 	return &Bot{
-		bot:     bot,
-		repo:    store,
-		cfg:     cfg,
-		log:     log,
-		allowed: parseAllowed(cfg.TelegramAllowedUsers),
-		stores:  stores,
+		bot:      bot,
+		repo:     store,
+		cfg:      cfg,
+		log:      log,
+		hc:       hc,
+		cdnHosts: cdnHosts(cfg),
+		allowed:  parseAllowed(cfg.TelegramAllowedUsers),
+		stores:   stores,
 	}, nil
 }
 
@@ -80,4 +85,26 @@ func parseAllowed(raw string) map[int64]bool {
 		}
 	}
 	return m
+}
+
+// cdnHosts returns the ordered list of image CDN hosts, primary first,
+// without duplicates.
+func cdnHosts(cfg *config.Config) []string {
+	var out []string
+	seen := map[string]bool{}
+	add := func(raw string) {
+		u, err := url.Parse(strings.TrimSpace(raw))
+		if err != nil || u.Host == "" {
+			return
+		}
+		if !seen[u.Host] {
+			seen[u.Host] = true
+			out = append(out, u.Host)
+		}
+	}
+	add(cfg.StoreCDNURL)
+	for _, raw := range strings.Split(cfg.StoreCDNFallbacks, ",") {
+		add(raw)
+	}
+	return out
 }
