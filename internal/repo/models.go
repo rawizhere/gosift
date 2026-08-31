@@ -34,6 +34,13 @@ type Rule struct {
 	UpdatedAt string
 }
 
+type SentOffer struct {
+	ChatID      int64
+	OfferKey    string
+	LastPrice   string
+	FirstSeenAt string
+}
+
 type User struct {
 	UserID    int64
 	Username  sql.NullString

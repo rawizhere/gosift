@@ -3,6 +3,8 @@ package repo
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"fmt"
 
 	"github.com/shopspring/decimal"
 
@@ -112,6 +114,52 @@ func (s *Store) GetDialogState(ctx context.Context, chatID int64) (string, strin
 
 func (s *Store) DeleteDialogState(ctx context.Context, chatID int64) error {
 	return s.q.DeleteDialogState(ctx, chatID)
+}
+
+// ShouldNotifyOffer reports whether an offer should be sent to the chat:
+// true for a brand-new listing and for any later price drop, false for a
+// known listing at the same or higher price. The stored price is updated so
+// that the current listing price always reflects the last seen value.
+func (s *Store) ShouldNotifyOffer(ctx context.Context, chatID int64, key, price string) (bool, error) {
+	last, err := s.q.GetSentOffer(ctx, GetSentOfferParams{ChatID: chatID, OfferKey: key})
+	if errors.Is(err, sql.ErrNoRows) {
+		return true, s.q.InsertSentOffer(ctx, InsertSentOfferParams{
+			ChatID:    chatID,
+			OfferKey:  key,
+			LastPrice: price,
+		})
+	}
+	if err != nil {
+		return false, err
+	}
+	newPrice, err := decimal.NewFromString(price)
+	if err != nil {
+		return false, fmt.Errorf("parse offer price %q: %w", price, err)
+	}
+	oldPrice, err := decimal.NewFromString(last)
+	if err != nil {
+		return false, fmt.Errorf("parse stored price %q: %w", last, err)
+	}
+	if newPrice.Equal(oldPrice) {
+		return false, nil
+	}
+	if newPrice.GreaterThan(oldPrice) {
+		// Price went up — keep following the listing, but don't spam.
+		return false, s.q.UpdateSentOfferPrice(ctx, UpdateSentOfferPriceParams{
+			LastPrice: price,
+			ChatID:    chatID,
+			OfferKey:  key,
+		})
+	}
+	// Price dropped — notify and remember the new price.
+	if err := s.q.UpdateSentOfferPrice(ctx, UpdateSentOfferPriceParams{
+		LastPrice: price,
+		ChatID:    chatID,
+		OfferKey:  key,
+	}); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func decString(d *decimal.Decimal) sql.NullString {

@@ -71,8 +71,25 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 		if len(unique) == 0 {
 			continue
 		}
-		sortOffers(unique)
-		if err := e.sender.SendCards(ctx, rule.ChatID, unique); err != nil {
+		// Persistent dedup: only brand-new listings and price drops reach the
+		// chat; already-known listings at the same or higher price are kept in
+		// the DB silently.
+		toSend := make([]models.Offer, 0, len(unique))
+		for _, o := range unique {
+			should, err := e.repo.ShouldNotifyOffer(ctx, rule.ChatID, offerKey(o), o.Price.String())
+			if err != nil {
+				e.log.Error("dedup check failed", "rule", rule.ID, "chat", rule.ChatID, "offer", offerKey(o), "error", err)
+				continue
+			}
+			if should {
+				toSend = append(toSend, o)
+			}
+		}
+		if len(toSend) == 0 {
+			continue
+		}
+		sortOffers(toSend)
+		if err := e.sender.SendCards(ctx, rule.ChatID, toSend); err != nil {
 			e.log.Error("send cards", "chat", rule.ChatID, "error", err)
 		}
 	}

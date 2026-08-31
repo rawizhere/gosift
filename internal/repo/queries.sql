@@ -45,3 +45,13 @@ SELECT chat_id, state, data, updated_at FROM dialog_state WHERE chat_id = ?;
 
 -- name: DeleteDialogState :exec
 DELETE FROM dialog_state WHERE chat_id = ?;
+
+-- name: GetSentOffer :one
+SELECT last_price FROM sent_offers WHERE chat_id = ? AND offer_key = ?;
+
+-- name: InsertSentOffer :exec
+INSERT INTO sent_offers (chat_id, offer_key, last_price)
+VALUES (?, ?, ?);
+
+-- name: UpdateSentOfferPrice :exec
+UPDATE sent_offers SET last_price = ? WHERE chat_id = ? AND offer_key = ?;

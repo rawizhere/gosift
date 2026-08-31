@@ -128,6 +128,22 @@ func (q *Queries) GetRule(ctx context.Context, arg GetRuleParams) (Rule, error) 
 	return i, err
 }
 
+const getSentOffer = `-- name: GetSentOffer :one
+SELECT last_price FROM sent_offers WHERE chat_id = ? AND offer_key = ?
+`
+
+type GetSentOfferParams struct {
+	ChatID   int64
+	OfferKey string
+}
+
+func (q *Queries) GetSentOffer(ctx context.Context, arg GetSentOfferParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, getSentOffer, arg.ChatID, arg.OfferKey)
+	var last_price string
+	err := row.Scan(&last_price)
+	return last_price, err
+}
+
 const getSetting = `-- name: GetSetting :one
 SELECT value FROM bot_settings WHERE key = ?
 `
@@ -137,6 +153,22 @@ func (q *Queries) GetSetting(ctx context.Context, key string) (string, error) {
 	var value string
 	err := row.Scan(&value)
 	return value, err
+}
+
+const insertSentOffer = `-- name: InsertSentOffer :exec
+INSERT INTO sent_offers (chat_id, offer_key, last_price)
+VALUES (?, ?, ?)
+`
+
+type InsertSentOfferParams struct {
+	ChatID    int64
+	OfferKey  string
+	LastPrice string
+}
+
+func (q *Queries) InsertSentOffer(ctx context.Context, arg InsertSentOfferParams) error {
+	_, err := q.db.ExecContext(ctx, insertSentOffer, arg.ChatID, arg.OfferKey, arg.LastPrice)
+	return err
 }
 
 const listEnabledRules = `-- name: ListEnabledRules :many
@@ -272,6 +304,21 @@ func (q *Queries) UpdateRule(ctx context.Context, arg UpdateRuleParams) error {
 		arg.ID,
 		arg.UserID,
 	)
+	return err
+}
+
+const updateSentOfferPrice = `-- name: UpdateSentOfferPrice :exec
+UPDATE sent_offers SET last_price = ? WHERE chat_id = ? AND offer_key = ?
+`
+
+type UpdateSentOfferPriceParams struct {
+	LastPrice string
+	ChatID    int64
+	OfferKey  string
+}
+
+func (q *Queries) UpdateSentOfferPrice(ctx context.Context, arg UpdateSentOfferPriceParams) error {
+	_, err := q.db.ExecContext(ctx, updateSentOfferPrice, arg.LastPrice, arg.ChatID, arg.OfferKey)
 	return err
 }
 
