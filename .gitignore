@@ -24,7 +24,3 @@ coverage.out
 .vscode/
 .DS_Store
 
-# keep docs in repo
-!docs/
-!docs/**
-!PLAN.md
