@@ -163,8 +163,12 @@ func (c *Client) maybeRotate() {
 	c.rotatedAt = time.Now()
 }
 
-// shouldRetry reports whether a status is worth retrying: 429 and 5xx except 501.
-func shouldRetry(status int) bool {
+// shouldRetry reports whether a status is worth retrying: 429, 5xx except 501 and, for API calls, 404.
+// A 404 can come from a broken load-balancer node, so the retry must dial a fresh connection.
+func shouldRetry(status int, retryNotFound bool) bool {
+	if retryNotFound && status == nethttp.StatusNotFound {
+		return true
+	}
 	return status == nethttp.StatusTooManyRequests || (status >= 500 && status != nethttp.StatusNotImplemented)
 }
 
@@ -182,17 +186,17 @@ func (c *Client) backoff(attempt int) time.Duration {
 	return wait + randutil.Duration(wait)
 }
 
-// Do sends the request with per-store rate limiting and retries on transport errors, 429 and 5xx except 501.
+// Do sends the request with per-store rate limiting and retries on transport errors, 404, 429 and 5xx except 501.
 func (c *Client) Do(ctx context.Context, req *nethttp.Request, store string) (*nethttp.Response, error) {
 	c.maybeRotate()
 	if err := c.limiter(store).Wait(ctx); err != nil {
 		return nil, err
 	}
-	return c.doWithRetries(ctx, req)
+	return c.doWithRetries(ctx, req, true)
 }
 
-// doWithRetries sends the request up to ParseRetries+1 times.
-func (c *Client) doWithRetries(ctx context.Context, req *nethttp.Request) (*nethttp.Response, error) {
+// doWithRetries sends the request up to ParseRetries+1 times, recycling connections between attempts.
+func (c *Client) doWithRetries(ctx context.Context, req *nethttp.Request, retryNotFound bool) (*nethttp.Response, error) {
 	retries := c.cfg.ParseRetries
 	if retries <= 0 {
 		retries = 3
@@ -201,7 +205,7 @@ func (c *Client) doWithRetries(ctx context.Context, req *nethttp.Request) (*neth
 	var err error
 	for attempt := 0; ; attempt++ {
 		resp, err = c.send(req.WithContext(ctx))
-		if err == nil && !shouldRetry(resp.StatusCode) {
+		if err == nil && !shouldRetry(resp.StatusCode, retryNotFound) {
 			return resp, nil
 		}
 		if attempt >= retries {
@@ -214,6 +218,9 @@ func (c *Client) doWithRetries(ctx context.Context, req *nethttp.Request) (*neth
 			_, _ = io.Copy(io.Discard, resp.Body)
 			_ = resp.Body.Close()
 		}
+		c.mu.Lock()
+		c.tc.CloseIdleConnections()
+		c.mu.Unlock()
 		wait := c.backoff(attempt)
 		select {
 		case <-ctx.Done():
@@ -321,13 +328,13 @@ func toLowerASCII(s string) string {
 	return string(out)
 }
 
-// GetBytes downloads a small payload without the per-store rate limiter.
+// GetBytes downloads a small payload without the per-store rate limiter; 404 is not retried.
 func (c *Client) GetBytes(ctx context.Context, rawURL string) ([]byte, error) {
 	req, err := nethttp.NewRequestWithContext(ctx, nethttp.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := c.doWithRetries(ctx, req)
+	resp, err := c.doWithRetries(ctx, req, false)
 	if err != nil {
 		return nil, err
 	}
