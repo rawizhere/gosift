@@ -46,7 +46,6 @@ All configuration is handled via environment variables (see `.env.example`):
 | `PARSE_TIMEOUT` | Per-request timeout | `20s` |
 | `PARSE_RETRIES` | Retries on transient HTTP errors | `3` |
 | `HTTP_PROXY` | Optional HTTP proxy URL | — |
-| `USER_AGENT` | HTTP User-Agent header | modern Chrome |
 | `STORE_KOMISSIONKI_ENABLED` | Enable the komissionki store driver | `true` |
 | `STORE_KOMISSIONKI_CDN_URL` | Primary photo CDN host | `https://c.komissionki.ru` |
 | `STORE_KOMISSIONKI_CDN_FALLBACKS` | Comma-separated fallback photo CDN hosts | `https://cdny.komissionki.ru` |

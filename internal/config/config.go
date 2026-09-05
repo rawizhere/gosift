@@ -22,7 +22,6 @@ type Config struct {
 	ParseRetryBackoff    time.Duration `env:"PARSE_RETRY_BACKOFF" envDefault:"5s"`
 	NotifyAlertInterval  time.Duration `env:"NOTIFY_ALERT_INTERVAL" envDefault:"1h"`
 	HTTPProxy            string        `env:"HTTP_PROXY"`
-	UserAgent            string        `env:"USER_AGENT"`
 	StoreBaseURL         string        `env:"STORE_KOMISSIONKI_BASE_URL" envDefault:"https://komissionki.ru"`
 	StoreAPIURL          string        `env:"STORE_KOMISSIONKI_API_URL" envDefault:"https://saf.komissionki.ru"`
 	StoreCDNURL          string        `env:"STORE_KOMISSIONKI_CDN_URL" envDefault:"https://c.komissionki.ru"`

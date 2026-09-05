@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hashicorp/go-retryablehttp"
 	"github.com/shopspring/decimal"
 
 	"github.com/rawizhere/gosift/internal/httpclient"
@@ -192,7 +191,7 @@ func (p *Parser) get(ctx context.Context, endpoint, query string, page int, sa s
 	if sa != "" {
 		params.Set("sa", sa)
 	}
-	req, err := retryablehttp.NewRequestWithContext(ctx, "GET", endpoint+"?"+params.Encode(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"?"+params.Encode(), nil)
 	if err != nil {
 		return nil, err
 	}

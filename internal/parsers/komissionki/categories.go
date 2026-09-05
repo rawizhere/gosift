@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/hashicorp/go-retryablehttp"
-
 	"github.com/rawizhere/gosift/internal/models"
 )
 
@@ -27,7 +25,7 @@ type apiCategoriesResponse struct {
 
 // Categories returns the store category tree.
 func (p *Parser) Categories(ctx context.Context) ([]models.Category, error) {
-	req, err := retryablehttp.NewRequestWithContext(ctx, http.MethodGet, p.baseURL+"/api/category", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.baseURL+"/api/category", nil)
 	if err != nil {
 		return nil, err
 	}

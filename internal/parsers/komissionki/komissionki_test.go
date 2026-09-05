@@ -101,7 +101,7 @@ func TestSearchLive(t *testing.T) {
 		ParseRetries: 2,
 		StoreRPS:     0.5,
 	}
-	hc, err := httpclient.NewRetryable(cfg)
+	hc, err := httpclient.New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

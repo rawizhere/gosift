@@ -30,7 +30,8 @@ jobs:
       - name: gofmt
         run: test -z "$(gofmt -l .)"
       - name: deadcode
-        run: go run golang.org/x/tools/cmd/deadcode@latest ./...
+        # pinned past golang/go#80973: rta panic on generic methods broke deadcode@latest
+        run: go run golang.org/x/tools/cmd/deadcode@v0.49.1-0.20260904221008-9e185295b3d9 ./...
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:

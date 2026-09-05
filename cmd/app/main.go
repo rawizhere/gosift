@@ -41,7 +41,7 @@ func run() error {
 	defer func() { _ = sqlDB.Close() }()
 
 	store := repo.NewStore(sqlDB)
-	hc, err := httpclient.NewRetryable(cfg)
+	hc, err := httpclient.New(cfg)
 	if err != nil {
 		return err
 	}
