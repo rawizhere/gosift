@@ -51,6 +51,7 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 		return fmt.Errorf("list rules: %w", err)
 	}
 	seen := map[string]bool{}
+	parsed, sent := 0, 0
 	for _, rule := range rules {
 		e.jitterSleep(ctx)
 		offers, err := e.parseRule(ctx, rule)
@@ -58,6 +59,8 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 			e.alert(rule, err)
 			continue
 		}
+		e.log.Debug("rule parsed", "rule", rule.ID, "store", rule.Store, "offers", len(offers))
+		parsed += len(offers)
 		e.fails[alertKey(rule)] = 0
 		unique := make([]models.Offer, 0, len(offers))
 		for _, o := range offers {
@@ -89,8 +92,11 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 		sortOffers(toSend)
 		if err := e.sender.SendCards(ctx, rule.ChatID, toSend); err != nil {
 			e.log.Error("send cards", "chat", rule.ChatID, "error", err)
+			continue
 		}
+		sent += len(toSend)
 	}
+	e.log.Info("parse cycle done", "rules", len(rules), "offers", parsed, "sent", sent)
 	return nil
 }
 

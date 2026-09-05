@@ -2,6 +2,7 @@ package komissionki
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"strings"
 	"testing"
@@ -101,7 +102,7 @@ func TestSearchLive(t *testing.T) {
 		ParseRetries: 2,
 		StoreRPS:     0.5,
 	}
-	hc, err := httpclient.New(cfg)
+	hc, err := httpclient.New(cfg, slog.Default())
 	if err != nil {
 		t.Fatal(err)
 	}

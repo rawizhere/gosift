@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"math/rand/v2"
 	nethttp "net/http"
 	"sort"
@@ -72,6 +73,7 @@ type Client struct {
 	fp        fingerprint
 	rotatedAt time.Time
 	cfg       *config.Config
+	log       *slog.Logger
 	limit     map[string]*rate.Limiter
 }
 
@@ -85,7 +87,7 @@ func (rt roundTripper) RoundTrip(req *nethttp.Request) (*nethttp.Response, error
 }
 
 // New creates a client with a random browser fingerprint, optional proxy and per-store rate limiting.
-func New(cfg *config.Config) (*Client, error) {
+func New(cfg *config.Config, log *slog.Logger) (*Client, error) {
 	fp := pickFingerprint()
 	opts := []tls_client.HttpClientOption{
 		tls_client.WithClientProfile(fp.profile),
@@ -101,7 +103,7 @@ func New(cfg *config.Config) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("tls client: %w", err)
 	}
-	c := &Client{tc: tc, ua: fp.userAgent, fp: fp, cfg: cfg, rotatedAt: time.Now(), limit: map[string]*rate.Limiter{}}
+	c := &Client{tc: tc, ua: fp.userAgent, fp: fp, cfg: cfg, log: log, rotatedAt: time.Now(), limit: map[string]*rate.Limiter{}}
 	return c, nil
 }
 
@@ -161,6 +163,7 @@ func (c *Client) maybeRotate() {
 	c.fp = fp
 	c.ua = fp.userAgent
 	c.rotatedAt = time.Now()
+	c.log.Info("fingerprint rotated", "profile", fp.name)
 }
 
 // shouldRetry reports whether a status is worth retrying: 429, 5xx except 501 and, for API calls, 404.
@@ -217,6 +220,9 @@ func (c *Client) doWithRetries(ctx context.Context, req *nethttp.Request, retryN
 		if resp != nil {
 			_, _ = io.Copy(io.Discard, resp.Body)
 			_ = resp.Body.Close()
+			c.log.Warn("request retry", "attempt", attempt+1, "status", resp.StatusCode)
+		} else {
+			c.log.Warn("request retry", "attempt", attempt+1, "error", err)
 		}
 		c.mu.Lock()
 		c.tc.CloseIdleConnections()

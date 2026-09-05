@@ -41,7 +41,7 @@ func run() error {
 	defer func() { _ = sqlDB.Close() }()
 
 	store := repo.NewStore(sqlDB)
-	hc, err := httpclient.New(cfg)
+	hc, err := httpclient.New(cfg, log)
 	if err != nil {
 		return err
 	}
@@ -56,6 +56,8 @@ func run() error {
 		return err
 	}
 	engine := parser.NewEngine(store, registry, bot, cfg, log)
+
+	log.Info("gosift started", "parse_interval", cfg.ParseInterval, "stores", registry.Names())
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

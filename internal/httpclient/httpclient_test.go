@@ -2,6 +2,7 @@ package httpclient
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -13,7 +14,7 @@ import (
 func newTestClient(t *testing.T, retries int) *Client {
 	t.Helper()
 	cfg := &config.Config{ParseRetries: retries, ParseRetryBackoff: time.Millisecond, StoreRPS: 1000}
-	c, err := New(cfg)
+	c, err := New(cfg, slog.Default())
 	if err != nil {
 		t.Fatalf("new client: %v", err)
 	}
