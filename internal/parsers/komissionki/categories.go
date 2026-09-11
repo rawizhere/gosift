@@ -52,10 +52,8 @@ func (p *Parser) Categories(ctx context.Context) ([]models.Category, error) {
 		cat = append(cat, models.Category{
 			ID:            c.ID,
 			Title:         c.Title,
-			Code:          c.Code,
 			ExtCode:       c.ExtCode,
 			ParentExtCode: c.ParentExtCode,
-			CountProduct:  c.CountProduct,
 			HasChildren:   hasChildren[c.ExtCode],
 		})
 	}

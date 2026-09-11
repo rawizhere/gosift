@@ -48,9 +48,7 @@ type User struct {
 type Category struct {
 	ID            int64
 	Title         string
-	Code          string
 	ExtCode       string
 	ParentExtCode string
-	CountProduct  int
 	HasChildren   bool
 }

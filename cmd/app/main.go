@@ -45,11 +45,10 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	registry := parser.NewRegistry()
+	registry := parser.Registry{}
 	if cfg.StoreEnabled {
-		if err := registry.Register(komissionki.New(hc, cfg.StoreBaseURL, cfg.StoreAPIURL, cfg.StoreCDNURL)); err != nil {
-			return err
-		}
+		p := komissionki.New(hc, cfg.StoreBaseURL, cfg.StoreAPIURL, cfg.StoreCDNURL)
+		registry[p.Name()] = p
 	}
 	bot, err := telegram.New(cfg, store, registry, log, hc, registry.Names())
 	if err != nil {

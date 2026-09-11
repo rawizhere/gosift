@@ -52,10 +52,7 @@ func newTestEngine(t *testing.T, p Parser) (*Engine, *fakeSender, *repo.Store) {
 	}
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	store := repo.NewStore(sqlDB)
-	reg := NewRegistry()
-	if err := reg.Register(p); err != nil {
-		t.Fatal(err)
-	}
+	reg := Registry{p.Name(): p}
 	sender := &fakeSender{}
 	cfg := &config.Config{ParseLimit: 20, ParseJitter: 0, NotifyAlertInterval: 1e9}
 	log := slog.New(slog.NewTextHandler(discard{}, nil))

@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"math/rand/v2"
 	nethttp "net/http"
-	"sort"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -278,8 +280,8 @@ func toFHTTP(req *nethttp.Request, ua string) (*fhttp.Request, error) {
 	}
 	// Send user-agent first so the header order matches real browsers.
 	order := []string{"user-agent"}
-	for _, key := range keysSorted(freq.Header) {
-		lower := toLowerASCII(key)
+	for _, key := range slices.Sorted(maps.Keys(freq.Header)) {
+		lower := strings.ToLower(key)
 		if lower != "user-agent" && lower != fhttp.HeaderOrderKey && lower != fhttp.PHeaderOrderKey {
 			order = append(order, lower)
 		}
@@ -313,25 +315,6 @@ func fromFHTTP(fresp *fhttp.Response, req *nethttp.Request) *nethttp.Response {
 		}
 	}
 	return resp
-}
-
-func keysSorted(h fhttp.Header) []string {
-	keys := make([]string, 0, len(h))
-	for key := range h {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func toLowerASCII(s string) string {
-	out := []byte(s)
-	for i := range out {
-		if out[i] >= 'A' && out[i] <= 'Z' {
-			out[i] += 'a' - 'A'
-		}
-	}
-	return string(out)
 }
 
 // GetBytes downloads a small payload without the per-store rate limiter; 404 is not retried.

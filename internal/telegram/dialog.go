@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -16,7 +17,6 @@ import (
 )
 
 type dialogData struct {
-	Mode       string `json:"mode"`
 	RuleID     int64  `json:"rule_id,omitempty"`
 	Store      string `json:"store,omitempty"`
 	Query      string `json:"query,omitempty"`
@@ -34,7 +34,7 @@ func (b *Bot) cmdAdd(ctx context.Context, msg *telego.Message) {
 		b.send(ctx, msg.Chat.ID, "Магазины недоступны.")
 		return
 	}
-	b.setDialog(ctx, msg.Chat.ID, "add.store", dialogData{Mode: "add"})
+	b.setDialog(ctx, msg.Chat.ID, "add.store", dialogData{})
 	b.askStore(ctx, msg.Chat.ID)
 }
 
@@ -48,7 +48,7 @@ func (b *Bot) cmdEdit(ctx context.Context, msg *telego.Message, arg string) {
 		b.send(ctx, msg.Chat.ID, "Правил нет. Добавь через /add.")
 		return
 	}
-	b.setDialog(ctx, msg.Chat.ID, "edit.choose", dialogData{Mode: "edit"})
+	b.setDialog(ctx, msg.Chat.ID, "edit.choose", dialogData{})
 	b.askRule(ctx, msg.Chat.ID, rules)
 }
 
@@ -103,8 +103,10 @@ func (b *Bot) handleCallback(ctx context.Context, cb *telego.CallbackQuery) {
 		return
 	}
 	chatID := cb.Message.GetChat().ID
+	// No active dialog is normal for menu callbacks, each branch checks the state itself.
 	state, raw, err := b.repo.GetDialogState(ctx, chatID)
-	if err != nil {
+	if err != nil && err != sql.ErrNoRows {
+		b.log.Error("get dialog state", "error", err)
 		return
 	}
 	d := dialogData{}
@@ -431,7 +433,7 @@ func parseDec(s string) *decimal.Decimal {
 
 // askCategory renders the category picker.
 func (b *Bot) askCategory(ctx context.Context, chatID int64, d dialogData) {
-	cats, err := b.parser.CategoryPicker(ctx, d.Store)
+	cats, err := b.parser.Categories(ctx, d.Store)
 	if err != nil || len(cats) == 0 {
 		b.send(ctx, chatID, "Магазин: "+d.Store+"\nЧто ищем? (категории недоступны)")
 		b.setDialog(ctx, chatID, "add.query", d)
@@ -517,7 +519,7 @@ func (b *Bot) handleCategoryPick(ctx context.Context, cb *telego.CallbackQuery, 
 	if selID == 0 {
 		return
 	}
-	cats, err := b.parser.CategoryPicker(ctx, d.Store)
+	cats, err := b.parser.Categories(ctx, d.Store)
 	if err != nil {
 		b.send(ctx, chatID, "Категории недоступны.")
 		return
@@ -607,7 +609,7 @@ func categoryTitle(path string) string {
 func (b *Bot) handleMenu(ctx context.Context, cb *telego.CallbackQuery, chatID int64, state, action string) {
 	switch action {
 	case "add":
-		b.setDialog(ctx, chatID, "add.store", dialogData{Mode: "add"})
+		b.setDialog(ctx, chatID, "add.store", dialogData{})
 		b.askStore(ctx, chatID)
 	case "list":
 		b.cmdList(ctx, messageFromCallback(cb, chatID))

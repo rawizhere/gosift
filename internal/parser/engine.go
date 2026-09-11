@@ -25,7 +25,7 @@ type Sender interface {
 
 type Engine struct {
 	repo      *repo.Store
-	registry  *Registry
+	registry  Registry
 	sender    Sender
 	cfg       *config.Config
 	log       *slog.Logger
@@ -33,7 +33,7 @@ type Engine struct {
 	fails     map[string]int
 }
 
-func NewEngine(store *repo.Store, registry *Registry, sender Sender, cfg *config.Config, log *slog.Logger) *Engine {
+func NewEngine(store *repo.Store, registry Registry, sender Sender, cfg *config.Config, log *slog.Logger) *Engine {
 	return &Engine{
 		repo:      store,
 		registry:  registry,

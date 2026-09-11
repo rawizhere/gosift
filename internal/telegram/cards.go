@@ -36,9 +36,10 @@ func (b *Bot) SendCards(ctx context.Context, chatID int64, offers []models.Offer
 		text := makeTextCards(batch)
 		batch = nil
 		_, err := b.bot.SendMessage(ctx, &telego.SendMessageParams{
-			ChatID:    telego.ChatID{ID: chatID},
-			Text:      text,
-			ParseMode: "HTML",
+			ChatID:             telego.ChatID{ID: chatID},
+			Text:               text,
+			ParseMode:          "HTML",
+			LinkPreviewOptions: &telego.LinkPreviewOptions{IsDisabled: true},
 		})
 		return err
 	}

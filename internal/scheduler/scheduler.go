@@ -4,25 +4,28 @@ import (
 	"context"
 	"time"
 
-	"github.com/go-co-op/gocron/v2"
-
 	"github.com/rawizhere/gosift/internal/randutil"
 )
 
+// Run calls fn every interval after a random start delay, until ctx is done.
 func Run(ctx context.Context, interval, startJitter time.Duration, fn func()) error {
-	s, err := gocron.NewScheduler(gocron.WithLocation(time.UTC))
-	if err != nil {
-		return err
-	}
-	var opts []gocron.JobOption
 	if startJitter > 0 {
-		delay := randutil.Duration(startJitter)
-		opts = append(opts, gocron.WithStartAt(gocron.WithStartDateTime(time.Now().Add(delay))))
+		timer := time.NewTimer(randutil.Duration(startJitter))
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil
+		case <-timer.C:
+		}
 	}
-	if _, err := s.NewJob(gocron.DurationJob(interval), gocron.NewTask(fn), opts...); err != nil {
-		return err
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-t.C:
+			fn()
+		}
 	}
-	s.Start()
-	<-ctx.Done()
-	return s.Shutdown()
 }

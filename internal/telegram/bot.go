@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -19,7 +20,7 @@ import (
 type Bot struct {
 	bot      *telego.Bot
 	repo     *repo.Store
-	parser   *parser.Registry
+	parser   parser.Registry
 	cfg      *config.Config
 	log      *slog.Logger
 	hc       *httpclient.Client
@@ -28,7 +29,7 @@ type Bot struct {
 	stores   []string
 }
 
-func New(cfg *config.Config, store *repo.Store, parserReg *parser.Registry, log *slog.Logger, hc *httpclient.Client, storeNames []string) (*Bot, error) {
+func New(cfg *config.Config, store *repo.Store, parsers parser.Registry, log *slog.Logger, hc *httpclient.Client, storeNames []string) (*Bot, error) {
 	bot, err := telego.NewBot(cfg.TelegramBotToken,
 		telego.WithHTTPClient(hc.StandardClient()),
 		telego.WithLogger(slogAdapter{log}),
@@ -36,18 +37,16 @@ func New(cfg *config.Config, store *repo.Store, parserReg *parser.Registry, log 
 	if err != nil {
 		return nil, fmt.Errorf("create bot: %w", err)
 	}
-	stores := make([]string, len(storeNames))
-	copy(stores, storeNames)
 	return &Bot{
 		bot:      bot,
 		repo:     store,
-		parser:   parserReg,
+		parser:   parsers,
 		cfg:      cfg,
 		log:      log,
 		hc:       hc,
 		cdnHosts: cdnHosts(cfg),
 		allowed:  parseAllowed(cfg.TelegramAllowedUsers),
-		stores:   stores,
+		stores:   slices.Clone(storeNames),
 	}, nil
 }
 
