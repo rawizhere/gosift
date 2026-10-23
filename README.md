@@ -43,7 +43,6 @@ All configuration is handled via environment variables (see `.env.example`):
 | `LOG_LEVEL` | Log level (`debug`, `info`, `warn`, `error`) | `info` |
 | `LOG_FORMAT` | Log format (`text`, `json`) | `text` |
 | `PARSE_INTERVAL` | Scheduler parse interval | `15m` |
-| `PARSE_LIMIT` | Max offers parsed per rule per cycle | `20` |
 | `PARSE_TIMEOUT` | Per-request timeout | `20s` |
 | `PARSE_RETRIES` | Retries on transient HTTP errors | `3` |
 | `HTTP_PROXY` | Optional HTTP proxy URL | — |

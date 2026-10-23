@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/shopspring/decimal"
 
@@ -54,7 +55,7 @@ func newTestEngine(t *testing.T, p Parser) (*Engine, *fakeSender, *repo.Store) {
 	store := repo.NewStore(sqlDB)
 	reg := Registry{p.Name(): p}
 	sender := &fakeSender{}
-	cfg := &config.Config{ParseLimit: 20, ParseJitter: 0, NotifyAlertInterval: 1e9}
+	cfg := &config.Config{ParseInterval: time.Minute, NotifyAlertInterval: 1e9}
 	log := slog.New(slog.NewTextHandler(discard{}, nil))
 	return NewEngine(store, reg, sender, cfg, log), sender, store
 }
@@ -169,16 +170,29 @@ func TestMatchesTitleAndPrice(t *testing.T) {
 	}
 }
 
-func TestPositiveQuery(t *testing.T) {
-	got := positiveQuery("macbook pro -neo -следы")
-	if got != "macbook pro" {
-		t.Errorf("positiveQuery = %q", got)
+func TestMatchesWordsAnyOrderAnyCase(t *testing.T) {
+	e := &Engine{}
+	cases := []struct {
+		query, title string
+		want         bool
+	}{
+		{"MacBook Pro", "MacBook Pro 16 2019", true},
+		{"macbook pro 14 m5", "Apple MacBook Pro 14 (M5)", true},
+		{"ноутбук macbook", "Ноутбук  Apple MacBook Pro m5", true},
+		{"pixel 9 pro xl", "Google Pixel 9 Pro XL 16/1 ТБ", true},
+		{"pixel 9 pro xl", "Google Pixel 11 Pro XL 16/1 ТБ", false},
+		{"", "что угодно", true},
+	}
+	for _, c := range cases {
+		if got := e.matches(models.Rule{Query: c.query}, models.Offer{Title: c.title}); got != c.want {
+			t.Errorf("matches(%q, %q) = %v, want %v", c.query, c.title, got, c.want)
+		}
 	}
 }
 
 func TestSplitQuery(t *testing.T) {
-	pos, neg := splitQuery("  MacBook Pro  -neo  -трещина ")
-	if !strings.EqualFold(pos, "MacBook Pro") {
+	pos, neg := splitQuery("  MacBook Pro  -neo  -Трещина -")
+	if strings.Join(pos, " ") != "macbook pro" {
 		t.Errorf("pos = %q", pos)
 	}
 	if len(neg) != 2 || neg[0] != "neo" || neg[1] != "трещина" {

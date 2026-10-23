@@ -2,8 +2,13 @@ package komissionki
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -58,14 +63,66 @@ func TestImageURLsEmpty(t *testing.T) {
 	}
 }
 
-func TestOffersFromItemsLimit(t *testing.T) {
-	items := make([]apiItem, 5)
-	for i := range items {
-		items[i] = apiItem{Code: "x", Category: apiCategory{Code: "c"}, ParentCategory: apiCategory{Code: "p"}}
+func TestSearchScansFeedUntilSince(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	// two full pages and a third, updated one minute apart, newest first
+	feed := make([]map[string]any, 2*pageSize+5)
+	for i := range feed {
+		feed[i] = map[string]any{
+			"barcodeShopUniq": strconv.Itoa(i),
+			"name":            "old name",
+			"title":           "Title " + strconv.Itoa(i),
+			"price":           1000,
+			"updatedAt":       now.Add(-time.Duration(i) * time.Minute),
+		}
 	}
-	got := offersFromItems("https://komissionki.ru", "https://c.example.com", items, 2)
-	if len(got) != 2 {
-		t.Fatalf("len = %d, want 2", len(got))
+	var queries []url.Values
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		queries = append(queries, q)
+		page, _ := strconv.Atoi(q.Get("page"))
+		if page > 1 && q.Get("sa") != "token" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		lo := min((page-1)*pageSize, len(feed))
+		hi := min(lo+pageSize, len(feed))
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"data": feed[lo:hi], "sa": "token"}})
+	}))
+	defer srv.Close()
+
+	cfg := &config.Config{ParseRetries: 0, ParseRetryBackoff: time.Millisecond, ParseInterval: time.Hour, ParseTimeout: 5 * time.Second, StoreRPS: 1000}
+	hc, err := httpclient.New(cfg, slog.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := New(hc, "https://komissionki.ru", srv.URL, "")
+	max := decimal.NewFromInt(5000)
+	// cut-off falls on page two
+	offers, err := p.Search(context.Background(), models.Rule{Query: "ignored by api", MaxPrice: &max},
+		parser.SearchOptions{Since: now.Add(-time.Duration(pageSize+3)*time.Minute + time.Second)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(offers) != pageSize+3 {
+		t.Fatalf("offers = %d, want %d", len(offers), pageSize+3)
+	}
+	if offers[0].Title != "Title 0" {
+		t.Errorf("title = %q, want the site title", offers[0].Title)
+	}
+	if len(queries) != 2 {
+		t.Fatalf("requests = %d, want 2", len(queries))
+	}
+	q := queries[0]
+	if q.Has("search") || q.Get("fieldSort") != "updatedAt" || q.Get("priceTo") != "5000" {
+		t.Errorf("query = %v", q)
+	}
+}
+
+func TestToOfferTitleFallsBackToName(t *testing.T) {
+	o := toOffer("https://komissionki.ru", "", apiItem{Name: " Pixel "})
+	if o.Title != "Pixel" {
+		t.Errorf("title = %q", o.Title)
 	}
 }
 
@@ -113,7 +170,7 @@ func TestSearchLive(t *testing.T) {
 	offers, err := p.Search(context.Background(), models.Rule{
 		Query:    "macbook pro",
 		MinPrice: &min,
-	}, parser.SearchOptions{Limit: 10})
+	}, parser.SearchOptions{Since: time.Now().Add(-time.Hour)})
 	if err != nil {
 		t.Fatalf("search with price filter: %v", err)
 	}

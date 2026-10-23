@@ -3,13 +3,14 @@ package parser
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/rawizhere/gosift/internal/models"
 )
 
 type SearchOptions struct {
-	Limit int
-	Query string
+	// Since bounds the scan: listings not updated after it are skipped.
+	Since time.Time
 }
 
 type Parser interface {

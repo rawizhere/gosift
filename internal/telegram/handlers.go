@@ -67,8 +67,8 @@ func (b *Bot) cmdHelp(ctx context.Context, msg *telego.Message) {
 }
 
 func (b *Bot) cmdSettings(ctx context.Context, msg *telego.Message) {
-	text := fmt.Sprintf("Интервал парсинга: %s\nПауза между запросами: %s\nЛимит на правило: %d\nМагазины: %s",
-		b.cfg.ParseInterval, b.cfg.ParseJitter, b.cfg.ParseLimit, strings.Join(b.stores, ", "))
+	text := fmt.Sprintf("Интервал парсинга: %s\nПауза между запросами: %s\nМагазины: %s",
+		b.cfg.ParseInterval, b.cfg.ParseJitter, strings.Join(b.stores, ", "))
 	if len(b.stores) == 0 {
 		text = "Магазины не подключены."
 	}

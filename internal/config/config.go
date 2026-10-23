@@ -17,7 +17,6 @@ type Config struct {
 	ParseInterval        time.Duration `env:"PARSE_INTERVAL" envDefault:"15m"`
 	ParseJitter          time.Duration `env:"PARSE_JITTER" envDefault:"3s"`
 	ParseTimeout         time.Duration `env:"PARSE_TIMEOUT" envDefault:"20s"`
-	ParseLimit           int           `env:"PARSE_LIMIT" envDefault:"20"`
 	ParseRetries         int           `env:"PARSE_RETRIES" envDefault:"3"`
 	ParseRetryBackoff    time.Duration `env:"PARSE_RETRY_BACKOFF" envDefault:"5s"`
 	NotifyAlertInterval  time.Duration `env:"NOTIFY_ALERT_INTERVAL" envDefault:"1h"`
@@ -52,9 +51,6 @@ func (c *Config) validate() error {
 	}
 	if c.ParseInterval <= 0 || c.ParseTimeout <= 0 || c.ParseRetryBackoff <= 0 {
 		return fmt.Errorf("PARSE_INTERVAL, PARSE_TIMEOUT and PARSE_RETRY_BACKOFF must be positive")
-	}
-	if c.ParseLimit <= 0 {
-		return fmt.Errorf("PARSE_LIMIT must be positive")
 	}
 	if c.StoreRPS <= 0 {
 		return fmt.Errorf("STORE_KOMISSIONKI_RPS must be positive")

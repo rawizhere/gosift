@@ -8,7 +8,9 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/shopspring/decimal"
 
@@ -17,7 +19,11 @@ import (
 	"github.com/rawizhere/gosift/internal/parser"
 )
 
-const pageSize = 36
+const (
+	pageSize = 36
+	// maxPages bounds one scan; the busiest feed moves ~4 pages per 15 minutes.
+	maxPages = 20
+)
 
 var errUnauthorized = errors.New("api status 401")
 
@@ -28,20 +34,22 @@ type apiResponse struct {
 type apiData struct {
 	Items []apiItem `json:"data"`
 	SA    string    `json:"sa"`
-	Total int       `json:"total"`
 }
 
 type apiItem struct {
-	ID              int64        `json:"id"`
-	Code            string       `json:"code"`
-	BarcodeShopUniq string       `json:"barcodeShopUniq"`
-	Name            string       `json:"name"`
-	Description     string       `json:"description"`
-	Price           json.Number  `json:"price"`
-	OldPrice        *json.Number `json:"oldPrice"`
-	City            []apiCity    `json:"city"`
-	Category        apiCategory  `json:"category"`
-	ParentCategory  apiCategory  `json:"parentCategory"`
+	ID              int64  `json:"id"`
+	Code            string `json:"code"`
+	BarcodeShopUniq string `json:"barcodeShopUniq"`
+	Name            string `json:"name"`
+	// Title is what the site shows; Name is the original and can be stale.
+	Title          string       `json:"title"`
+	UpdatedAt      time.Time    `json:"updatedAt"`
+	Description    string       `json:"description"`
+	Price          json.Number  `json:"price"`
+	OldPrice       *json.Number `json:"oldPrice"`
+	City           []apiCity    `json:"city"`
+	Category       apiCategory  `json:"category"`
+	ParentCategory apiCategory  `json:"parentCategory"`
 	// PhotosResized maps photo IDs to gallery positions.
 	PhotosResized map[string]int `json:"photosResized"`
 }
@@ -71,151 +79,81 @@ func (p *Parser) Name() string {
 	return "komissionki"
 }
 
+// Search scans the store feed newest-updated first, so new listings and price changes both surface,
+// and stops at opts.Since. The query is matched by the engine: with a search term the API ranks
+// by relevance and ignores the sort order.
 func (p *Parser) Search(ctx context.Context, rule models.Rule, opts parser.SearchOptions) ([]models.Offer, error) {
-	query := opts.Query
-	if query == "" {
-		query = rule.Query
-	}
-	endpoint := p.apiURL + "/api/product-filter/filter"
-
-	// The first page mints the session token; price filters may return none.
-	first, sa, err := p.handshake(ctx, endpoint, query, rule)
-	if err != nil {
-		return nil, fmt.Errorf("handshake: %w", err)
-	}
-	offers := offersFromItems(p.baseURL, p.cdnURL, first, opts.Limit)
-
-	// Pagination needs a token the API only mints for unfiltered searches.
-	priceFiltered := rule.MinPrice != nil || rule.MaxPrice != nil
-	for page := 2; !priceFiltered && len(offers) < opts.Limit; page++ {
-		raw, nextSA, err := p.fetchPage(ctx, endpoint, query, page, sa, rule)
+	var offers []models.Offer
+	sa := ""
+	for page := 1; page <= maxPages; page++ {
+		items, nextSA, err := p.fetch(ctx, rule, page, sa)
+		if page > 1 && (errors.Is(err, errUnauthorized) || err == nil && len(items) == 0) {
+			// The session token expired: mint a new one on page one and retry once.
+			if _, sa, err = p.fetch(ctx, rule, 1, ""); err == nil {
+				items, nextSA, err = p.fetch(ctx, rule, page, sa)
+			}
+		}
 		if err != nil {
-			if !errors.Is(err, errUnauthorized) {
-				return nil, err
-			}
-			// Session expired: re-handshake and retry the page once.
-			_, sa, err = p.handshake(ctx, endpoint, query, rule)
-			if err != nil {
-				return nil, err
-			}
-			raw, nextSA, err = p.fetchPage(ctx, endpoint, query, page, sa, rule)
-			if err != nil {
-				return nil, err
-			}
+			return nil, err
 		}
-		sa = nextSA
-		if len(raw) == 0 {
-			_, reSA, err := p.handshake(ctx, endpoint, query, rule)
-			if err != nil {
-				break
-			}
-			sa = reSA
-			raw, nextSA, err = p.fetchPage(ctx, endpoint, query, page, sa, rule)
-			if err != nil {
-				return nil, err
-			}
+		if nextSA != "" {
 			sa = nextSA
-			if len(raw) == 0 {
-				break
-			}
 		}
-		offers = append(offers, offersFromItems(p.baseURL, p.cdnURL, raw, opts.Limit)...)
+		for _, item := range items {
+			if item.UpdatedAt.Before(opts.Since) {
+				return offers, nil
+			}
+			offers = append(offers, toOffer(p.baseURL, p.cdnURL, item))
+		}
+		if len(items) < pageSize {
+			break
+		}
 	}
 	return offers, nil
 }
 
-// handshake fetches page one and mints a session token.
-func (p *Parser) handshake(ctx context.Context, endpoint, query string, rule models.Rule) ([]apiItem, string, error) {
-	category, isParent := ruleCategoryParams(rule.Category)
-	resp, err := p.get(ctx, endpoint, query, 1, "", rule, true, category, isParent)
-	if err != nil {
-		return nil, "", err
-	}
-	if resp.Data.SA != "" {
-		return resp.Data.Items, resp.Data.SA, nil
-	}
-	if rule.MinPrice != nil || rule.MaxPrice != nil {
-		plain, err := p.get(ctx, endpoint, query, 1, "", rule, false, category, isParent)
-		if err != nil {
-			return nil, "", err
-		}
-		if plain.Data.SA != "" {
-			return resp.Data.Items, plain.Data.SA, nil
-		}
-	}
-	if resp.Data.Total > 0 && len(resp.Data.Items) == 0 {
-		return nil, "", fmt.Errorf("empty sa token")
-	}
-	return resp.Data.Items, "", nil // zero-result query
-}
-
-func (p *Parser) fetchPage(ctx context.Context, endpoint, query string, page int, sa string, rule models.Rule) ([]apiItem, string, error) {
-	cat, parent := ruleCategoryParams(rule.Category)
-	resp, err := p.get(ctx, endpoint, query, page, sa, rule, true, cat, parent)
-	if err != nil {
-		return nil, "", err
-	}
-	return resp.Data.Items, resp.Data.SA, nil
-}
-
-func (p *Parser) get(ctx context.Context, endpoint, query string, page int, sa string, rule models.Rule, usePrice bool, category string, isParent bool) (*apiResponse, error) {
+// fetch requests one feed page with the rule's category and price filters.
+func (p *Parser) fetch(ctx context.Context, rule models.Rule, page int, sa string) ([]apiItem, string, error) {
 	params := url.Values{}
-	if query != "" {
-		params.Set("search", query)
-	}
-	params.Set("limit", fmt.Sprintf("%d", pageSize))
-	params.Set("page", fmt.Sprintf("%d", page))
+	params.Set("limit", strconv.Itoa(pageSize))
+	params.Set("page", strconv.Itoa(page))
 	params.Set("sort", "desc")
-	params.Set("fieldSort", "createdAt")
-	if category != "" {
+	params.Set("fieldSort", "updatedAt")
+	if category, isParent := ruleCategoryParams(rule.Category); category != "" {
 		params.Set("category", category)
-	}
-	if isParent {
-		params.Set("isParentCategory", "1")
-	}
-	if usePrice {
-		if rule.MinPrice != nil {
-			params.Set("priceFrom", rule.MinPrice.String())
+		if isParent {
+			params.Set("isParentCategory", "1")
 		}
-		if rule.MaxPrice != nil {
-			params.Set("priceTo", rule.MaxPrice.String())
-		}
+	}
+	if rule.MinPrice != nil {
+		params.Set("priceFrom", rule.MinPrice.String())
+	}
+	if rule.MaxPrice != nil {
+		params.Set("priceTo", rule.MaxPrice.String())
 	}
 	if sa != "" {
 		params.Set("sa", sa)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"?"+params.Encode(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.apiURL+"/api/product-filter/filter?"+params.Encode(), nil)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	resp, err := p.client.Do(ctx, req, p.Name())
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusUnauthorized {
-		return nil, errUnauthorized
+		return nil, "", errUnauthorized
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("api status %d", resp.StatusCode)
+		return nil, "", fmt.Errorf("api status %d", resp.StatusCode)
 	}
 	var out apiResponse
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return nil, fmt.Errorf("decode: %w", err)
+		return nil, "", fmt.Errorf("decode: %w", err)
 	}
-	return &out, nil
-}
-
-func offersFromItems(baseURL, cdnURL string, items []apiItem, limit int) []models.Offer {
-	out := make([]models.Offer, 0, len(items))
-	for _, item := range items {
-		offer := toOffer(baseURL, cdnURL, item)
-		out = append(out, offer)
-		if len(out) >= limit {
-			break
-		}
-	}
-	return out
+	return out.Data.Items, out.Data.SA, nil
 }
 
 func toOffer(baseURL, cdnURL string, item apiItem) models.Offer {
@@ -234,6 +172,10 @@ func toOffer(baseURL, cdnURL string, item apiItem) models.Offer {
 		}
 	}
 	u := fmt.Sprintf("%s/catalog/%s/%s/%s/", baseURL, item.ParentCategory.Code, item.Category.Code, item.Code)
+	title := item.Title
+	if title == "" {
+		title = item.Name
+	}
 	catTitle := item.Category.Title
 	if catTitle == "" {
 		catTitle = item.Category.Name
@@ -242,7 +184,7 @@ func toOffer(baseURL, cdnURL string, item apiItem) models.Offer {
 		Key:         item.BarcodeShopUniq,
 		Store:       "komissionki",
 		Category:    catTitle,
-		Title:       item.Name,
+		Title:       strings.TrimSpace(title),
 		Description: strings.TrimSpace(item.Description),
 		URL:         u,
 		Price:       price,

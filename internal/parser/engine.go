@@ -113,7 +113,9 @@ func (e *Engine) parseRule(ctx context.Context, rule models.Rule) (offers []mode
 	if err != nil {
 		return nil, err
 	}
-	raw, err := p.Search(ctx, rule, SearchOptions{Query: positiveQuery(rule.Query), Limit: e.cfg.ParseLimit})
+	// Look back two intervals so a slow cycle leaves no gap; dedup drops repeats.
+	since := time.Now().Add(-2 * e.cfg.ParseInterval)
+	raw, err := p.Search(ctx, rule, SearchOptions{Since: since})
 	if err != nil {
 		return nil, err
 	}
@@ -127,24 +129,18 @@ func (e *Engine) parseRule(ctx context.Context, rule models.Rule) (offers []mode
 	return out, nil
 }
 
-func positiveQuery(q string) string {
-	pos, _ := splitQuery(q)
-	return pos
-}
-
-func splitQuery(q string) (string, []string) {
-	var pos []string
-	var neg []string
-	for _, t := range strings.Fields(q) {
-		if strings.HasPrefix(t, "-") {
-			if t = strings.TrimPrefix(t, "-"); t != "" {
-				neg = append(neg, strings.ToLower(t))
+// splitQuery returns the lowercased required words and the words excluded with a leading '-'.
+func splitQuery(q string) (pos, neg []string) {
+	for _, t := range strings.Fields(strings.ToLower(q)) {
+		if w, ok := strings.CutPrefix(t, "-"); ok {
+			if w != "" {
+				neg = append(neg, w)
 			}
 			continue
 		}
 		pos = append(pos, t)
 	}
-	return strings.TrimSpace(strings.Join(pos, " ")), neg
+	return pos, neg
 }
 
 func (e *Engine) matches(rule models.Rule, offer models.Offer) bool {
@@ -155,13 +151,15 @@ func (e *Engine) matches(rule models.Rule, offer models.Offer) bool {
 		return false
 	}
 	pos, neg := splitQuery(rule.Query)
-	// Match words in both the title and the description.
+	// Every query word must appear in the title or description, in any order.
 	text := strings.ToLower(offer.Title + " " + offer.Description)
-	if pos != "" && !strings.Contains(text, pos) {
-		return false
+	for _, w := range pos {
+		if !strings.Contains(text, w) {
+			return false
+		}
 	}
-	for _, n := range neg {
-		if strings.Contains(text, n) {
+	for _, w := range neg {
+		if strings.Contains(text, w) {
 			return false
 		}
 	}
