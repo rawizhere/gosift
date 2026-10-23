@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/shopspring/decimal"
 
@@ -94,12 +95,13 @@ func TestSearchLive(t *testing.T) {
 		t.Skip("set GOSIFT_LIVE=1 to run live API tests")
 	}
 	cfg := &config.Config{
-		StoreBaseURL: "https://komissionki.ru",
-		StoreAPIURL:  "https://saf.komissionki.ru",
-		StoreCDNURL:  "https://c.komissionki.ru",
-		ParseTimeout: 20e9,
-		ParseRetries: 2,
-		StoreRPS:     0.5,
+		StoreBaseURL:  "https://komissionki.ru",
+		StoreAPIURL:   "https://saf.komissionki.ru",
+		StoreCDNURL:   "https://c.komissionki.ru",
+		ParseTimeout:  20e9,
+		ParseInterval: time.Hour,
+		ParseRetries:  2,
+		StoreRPS:      0.5,
 	}
 	hc, err := httpclient.New(cfg, slog.Default())
 	if err != nil {
