@@ -23,7 +23,8 @@ var printer = message.NewPrinter(language.Russian)
 
 const (
 	maxMessageLen = 4096
-	maxCaptionLen = 1024
+	// maxTitleLen keeps a card under Telegram's 1024-char caption limit.
+	maxTitleLen = 600
 )
 
 // SendCards sends offers as photo or text messages.
@@ -81,7 +82,7 @@ func makeTextCards(cards []string) string {
 
 // sendOfferWithImages downloads photos and sends them with the card caption.
 func (b *Bot) sendOfferWithImages(ctx context.Context, chatID int64, o models.Offer) error {
-	caption := truncateHTML(formatCard(o), maxCaptionLen)
+	caption := formatCard(o)
 	jpegs := make([][]byte, 0, len(o.Images))
 	host := "" // resolved CDN host for this offer
 	for _, imgURL := range o.Images {
@@ -168,77 +169,6 @@ func toJPEG(data []byte) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// truncateHTML truncates s to n runes with balanced HTML tags.
-func truncateHTML(s string, n int) string {
-	runes := []rune(s)
-	if len(runes) <= n {
-		return s
-	}
-	var sb strings.Builder
-	var stack []string
-	for i := 0; i < n; {
-		if runes[i] != '<' {
-			sb.WriteRune(runes[i])
-			i++
-			continue
-		}
-		j := i
-		for j < n && runes[j] != '>' {
-			j++
-		}
-		if j >= n { // drop the tag; a bare '<' breaks Telegram's HTML parser
-			return closeTags(sb.String(), stack)
-		}
-		tag := string(runes[i : j+1])
-		name, closing, selfClosing := parseTag(tag)
-		if name != "" && !selfClosing {
-			if closing {
-				if len(stack) > 0 && stack[len(stack)-1] == name {
-					stack = stack[:len(stack)-1]
-				}
-			} else {
-				stack = append(stack, name)
-			}
-		}
-		sb.WriteString(tag)
-		i = j + 1
-	}
-	return closeTags(sb.String(), stack)
-}
-
-// closeTags appends closing tags for all open tags.
-func closeTags(s string, stack []string) string {
-	if len(stack) == 0 {
-		return s
-	}
-	var sb strings.Builder
-	sb.WriteString(s)
-	for k := len(stack) - 1; k >= 0; k-- {
-		sb.WriteString("</")
-		sb.WriteString(stack[k])
-		sb.WriteString(">")
-	}
-	return sb.String()
-}
-
-func parseTag(tag string) (name string, closing, selfClosing bool) {
-	t := strings.TrimPrefix(tag, "<")
-	if strings.HasPrefix(t, "/") {
-		closing = true
-		t = strings.TrimPrefix(t, "/")
-	}
-	if t == "" {
-		return "", closing, false
-	}
-	if i := strings.IndexAny(t, " >\t\n"); i >= 0 {
-		name = t[:i]
-	} else {
-		name = t
-	}
-	selfClosing = strings.HasSuffix(t, "/>")
-	return name, closing, selfClosing
-}
-
 func (b *Bot) SendAlert(ctx context.Context, chatID int64, store string, err error) error {
 	text := fmt.Sprintf("Магазин %s временно недоступен: %s", html.EscapeString(store), html.EscapeString(err.Error()))
 	_, sendErr := b.bot.SendMessage(ctx, &telego.SendMessageParams{
@@ -254,7 +184,7 @@ func formatCard(o models.Offer) string {
 	if o.Category != "" {
 		fmt.Fprintf(&sb, "<b>Категория:</b> %s\n", html.EscapeString(o.Category))
 	}
-	fmt.Fprintf(&sb, "<b>Товар:</b> %s\n", html.EscapeString(o.Title))
+	fmt.Fprintf(&sb, "<b>Товар:</b> %s\n", html.EscapeString(truncate(o.Title, maxTitleLen)))
 	price := formatPrice(o.Price)
 	if o.OldPrice != nil {
 		price += fmt.Sprintf(" (было %s)", formatPrice(*o.OldPrice))

@@ -76,7 +76,6 @@ func TestToOfferDescriptionAndImages(t *testing.T) {
 		Description:     "  в комплекте коробка, чехол  ",
 		Price:           "109990",
 		City:            []apiCity{{Name: "Москва"}},
-		Filial:          []apiFilial{{Balance: 1}},
 		Category:        apiCategory{Code: "noutbuki"},
 		PhotosResized:   map[string]int{"p1": 0},
 	}

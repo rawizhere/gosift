@@ -38,7 +38,7 @@ func (b *Bot) cmdAdd(ctx context.Context, msg *telego.Message) {
 	b.askStore(ctx, msg.Chat.ID)
 }
 
-func (b *Bot) cmdEdit(ctx context.Context, msg *telego.Message, arg string) {
+func (b *Bot) cmdEdit(ctx context.Context, msg *telego.Message) {
 	rules, err := b.repo.ListRulesByUser(ctx, msg.From.ID)
 	if err != nil {
 		b.send(ctx, msg.Chat.ID, "Ошибка при чтении правил.")
@@ -86,7 +86,6 @@ func (b *Bot) handleDialogStep(ctx context.Context, msg *telego.Message, text st
 		b.setDialog(ctx, msg.Chat.ID, "add.confirm", d)
 		b.askConfirm(ctx, msg.Chat.ID, d)
 	case "edit.value":
-		d.Field = parseFieldArg(d.Field)
 		if !validFieldValue(d.Field, text) {
 			b.send(ctx, msg.Chat.ID, "Некорректное значение.")
 			return
@@ -115,7 +114,7 @@ func (b *Bot) handleCallback(ctx context.Context, cb *telego.CallbackQuery) {
 	parts := strings.Split(cb.Data, ":")
 	switch parts[0] {
 	case "menu":
-		b.handleMenu(ctx, cb, chatID, state, parts[1])
+		b.handleMenu(ctx, cb, chatID, parts[1])
 	case "store":
 		if state == "add.store" {
 			d.Store = parts[1]
@@ -353,11 +352,8 @@ func parseCity(text string) string {
 }
 
 func validPrice(text string) bool {
-	s := strings.ReplaceAll(strings.TrimSpace(text), ",", ".")
-	if s == "" {
-		return false
-	}
-	return isNumeric(s)
+	_, err := strconv.ParseFloat(strings.ReplaceAll(strings.TrimSpace(text), ",", "."), 64)
+	return err == nil
 }
 
 func normalizePrice(text string) string {
@@ -375,13 +371,6 @@ func validFieldValue(field, value string) bool {
 	default:
 		return strings.TrimSpace(value) != ""
 	}
-}
-
-func parseFieldArg(field string) string {
-	if field == "" {
-		return "query"
-	}
-	return field
 }
 
 func fieldPrompt(field string) string {
@@ -409,14 +398,6 @@ func orDash(v string) string {
 func parseID(s string) int64 {
 	id, _ := strconv.ParseInt(s, 10, 64)
 	return id
-}
-
-func isNumeric(s string) bool {
-	if s == "" {
-		return false
-	}
-	_, err := strconv.ParseFloat(s, 64)
-	return err == nil
 }
 
 func parseDec(s string) *decimal.Decimal {
@@ -606,7 +587,7 @@ func categoryTitle(path string) string {
 }
 
 // handleMenu routes the main menu buttons.
-func (b *Bot) handleMenu(ctx context.Context, cb *telego.CallbackQuery, chatID int64, state, action string) {
+func (b *Bot) handleMenu(ctx context.Context, cb *telego.CallbackQuery, chatID int64, action string) {
 	switch action {
 	case "add":
 		b.setDialog(ctx, chatID, "add.store", dialogData{})
@@ -614,7 +595,7 @@ func (b *Bot) handleMenu(ctx context.Context, cb *telego.CallbackQuery, chatID i
 	case "list":
 		b.cmdList(ctx, messageFromCallback(cb, chatID))
 	case "edit":
-		b.cmdEdit(ctx, messageFromCallback(cb, chatID), "")
+		b.cmdEdit(ctx, messageFromCallback(cb, chatID))
 	}
 }
 

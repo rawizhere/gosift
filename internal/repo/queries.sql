@@ -7,16 +7,13 @@ INSERT INTO rules (user_id, chat_id, store, query, category, city, min_price, ma
 VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: ListRulesByUser :many
-SELECT id, user_id, chat_id, store, query, category, city, min_price, max_price, enabled, created_at, updated_at
-FROM rules WHERE user_id = ? ORDER BY id;
+SELECT * FROM rules WHERE user_id = ? ORDER BY id;
 
 -- name: ListEnabledRules :many
-SELECT id, user_id, chat_id, store, query, category, city, min_price, max_price, enabled, created_at, updated_at
-FROM rules WHERE enabled = 1 ORDER BY id;
+SELECT * FROM rules WHERE enabled = 1 ORDER BY id;
 
 -- name: GetRule :one
-SELECT id, user_id, chat_id, store, query, category, city, min_price, max_price, enabled, created_at, updated_at
-FROM rules WHERE id = ? AND user_id = ?;
+SELECT * FROM rules WHERE id = ? AND user_id = ?;
 
 -- name: UpdateRule :exec
 UPDATE rules SET query = ?, category = ?, city = ?, min_price = ?, max_price = ?, updated_at = datetime('now')
@@ -27,13 +24,6 @@ UPDATE rules SET enabled = ?, updated_at = datetime('now') WHERE id = ? AND user
 
 -- name: DeleteRule :exec
 DELETE FROM rules WHERE id = ? AND user_id = ?;
-
--- name: SetSetting :exec
-INSERT INTO bot_settings (key, value) VALUES (?, ?)
-ON CONFLICT(key) DO UPDATE SET value = excluded.value;
-
--- name: GetSetting :one
-SELECT value FROM bot_settings WHERE key = ?;
 
 -- name: UpsertDialogState :exec
 INSERT INTO dialog_state (chat_id, state, data, updated_at)

@@ -2,17 +2,17 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/caarlos0/env/v11"
-	"github.com/joho/godotenv"
 )
 
 type Config struct {
 	TelegramBotToken     string        `env:"TELEGRAM_BOT_TOKEN"`
 	TelegramAllowedUsers string        `env:"TELEGRAM_ALLOWED_USERS"`
 	DBPath               string        `env:"DB_PATH" envDefault:"/data/gosift.db"`
-	LogLevel             string        `env:"LOG_LEVEL" envDefault:"info"`
+	LogLevel             slog.Level    `env:"LOG_LEVEL" envDefault:"info"`
 	LogFormat            string        `env:"LOG_FORMAT" envDefault:"text"`
 	ParseInterval        time.Duration `env:"PARSE_INTERVAL" envDefault:"15m"`
 	ParseJitter          time.Duration `env:"PARSE_JITTER" envDefault:"3s"`
@@ -31,7 +31,6 @@ type Config struct {
 }
 
 func Load() (*Config, error) {
-	_ = godotenv.Load()
 	cfg := &Config{}
 	if err := env.Parse(cfg); err != nil {
 		return nil, fmt.Errorf("parse env: %w", err)
@@ -46,15 +45,13 @@ func (c *Config) validate() error {
 	if c.TelegramBotToken == "" {
 		return fmt.Errorf("TELEGRAM_BOT_TOKEN is required")
 	}
-	switch c.LogLevel {
-	case "debug", "info", "warn", "error":
-	default:
-		return fmt.Errorf("LOG_LEVEL must be one of debug, info, warn, error")
-	}
 	switch c.LogFormat {
 	case "text", "json":
 	default:
 		return fmt.Errorf("LOG_FORMAT must be text or json")
+	}
+	if c.ParseInterval <= 0 || c.ParseTimeout <= 0 || c.ParseRetryBackoff <= 0 {
+		return fmt.Errorf("PARSE_INTERVAL, PARSE_TIMEOUT and PARSE_RETRY_BACKOFF must be positive")
 	}
 	if c.ParseLimit <= 0 {
 		return fmt.Errorf("PARSE_LIMIT must be positive")

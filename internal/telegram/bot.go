@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -29,7 +28,7 @@ type Bot struct {
 	stores   []string
 }
 
-func New(cfg *config.Config, store *repo.Store, parsers parser.Registry, log *slog.Logger, hc *httpclient.Client, storeNames []string) (*Bot, error) {
+func New(cfg *config.Config, store *repo.Store, parsers parser.Registry, log *slog.Logger, hc *httpclient.Client) (*Bot, error) {
 	bot, err := telego.NewBot(cfg.TelegramBotToken,
 		telego.WithHTTPClient(hc.StandardClient()),
 		telego.WithLogger(slogAdapter{log}),
@@ -46,7 +45,7 @@ func New(cfg *config.Config, store *repo.Store, parsers parser.Registry, log *sl
 		hc:       hc,
 		cdnHosts: cdnHosts(cfg),
 		allowed:  parseAllowed(cfg.TelegramAllowedUsers),
-		stores:   slices.Clone(storeNames),
+		stores:   parsers.Names(),
 	}, nil
 }
 

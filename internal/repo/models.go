@@ -8,11 +8,6 @@ import (
 	"database/sql"
 )
 
-type BotSetting struct {
-	Key   string
-	Value string
-}
-
 type DialogState struct {
 	ChatID    int64
 	State     string

@@ -12,12 +12,11 @@ import (
 )
 
 type Store struct {
-	db *sql.DB
-	q  *Queries
+	q *Queries
 }
 
 func NewStore(db *sql.DB) *Store {
-	return &Store{db: db, q: New(db)}
+	return &Store{q: New(db)}
 }
 
 func (s *Store) CreateUser(ctx context.Context, u models.User) error {
@@ -47,7 +46,7 @@ func (s *Store) ListRulesByUser(ctx context.Context, userID int64) ([]models.Rul
 	if err != nil {
 		return nil, err
 	}
-	return toRuleRows(rows), nil
+	return toRules(rows), nil
 }
 
 func (s *Store) ListEnabledRules(ctx context.Context) ([]models.Rule, error) {
@@ -55,7 +54,7 @@ func (s *Store) ListEnabledRules(ctx context.Context) ([]models.Rule, error) {
 	if err != nil {
 		return nil, err
 	}
-	return toRuleRowsEnabled(rows), nil
+	return toRules(rows), nil
 }
 
 func (s *Store) GetRule(ctx context.Context, id, userID int64) (models.Rule, error) {
@@ -63,7 +62,7 @@ func (s *Store) GetRule(ctx context.Context, id, userID int64) (models.Rule, err
 	if err != nil {
 		return models.Rule{}, err
 	}
-	return toRuleRowGet(r), nil
+	return toRule(r), nil
 }
 
 func (s *Store) UpdateRule(ctx context.Context, r models.Rule) error {
@@ -88,14 +87,6 @@ func (s *Store) SetRuleEnabled(ctx context.Context, id, userID int64, enabled bo
 
 func (s *Store) DeleteRule(ctx context.Context, id, userID int64) error {
 	return s.q.DeleteRule(ctx, DeleteRuleParams{ID: id, UserID: userID})
-}
-
-func (s *Store) GetSetting(ctx context.Context, key string) (string, error) {
-	return s.q.GetSetting(ctx, key)
-}
-
-func (s *Store) SetSetting(ctx context.Context, key, value string) error {
-	return s.q.SetSetting(ctx, SetSettingParams{Key: key, Value: value})
 }
 
 func (s *Store) UpsertDialogState(ctx context.Context, chatID int64, state, data string) error {
@@ -142,23 +133,13 @@ func (s *Store) ShouldNotifyOffer(ctx context.Context, chatID int64, key, price 
 	if newPrice.Equal(oldPrice) {
 		return false, nil
 	}
-	if newPrice.GreaterThan(oldPrice) {
-		// Price went up: keep following the listing.
-		return false, s.q.UpdateSentOfferPrice(ctx, UpdateSentOfferPriceParams{
-			LastPrice: price,
-			ChatID:    chatID,
-			OfferKey:  key,
-		})
-	}
-	// Price dropped: notify and remember the new price.
-	if err := s.q.UpdateSentOfferPrice(ctx, UpdateSentOfferPriceParams{
+	// Remember the new price either way; notify only on a drop.
+	err = s.q.UpdateSentOfferPrice(ctx, UpdateSentOfferPriceParams{
 		LastPrice: price,
 		ChatID:    chatID,
 		OfferKey:  key,
-	}); err != nil {
-		return false, err
-	}
-	return true, nil
+	})
+	return err == nil && newPrice.LessThan(oldPrice), err
 }
 
 func decString(d *decimal.Decimal) sql.NullString {
@@ -175,69 +156,26 @@ func boolInt(v bool) int64 {
 	return 0
 }
 
-func toRuleRows(rows []ListRulesByUserRow) []models.Rule {
+func toRules(rows []Rule) []models.Rule {
 	out := make([]models.Rule, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, toRuleRow(ruleRowFromList(r)))
+		out = append(out, toRule(r))
 	}
 	return out
 }
 
-// toRuleRowsEnabled converts the enabled-rules rows.
-func toRuleRowsEnabled(rows []ListEnabledRulesRow) []models.Rule {
-	out := make([]models.Rule, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, toRuleRow(ruleRowFromEnabled(r)))
-	}
-	return out
-}
-
-func toRuleRowGet(r GetRuleRow) models.Rule {
-	return toRuleRow(ruleRowFromGet(r))
-}
-
-// ruleRow is the shape shared by the sqlc rules rows.
-type ruleRow struct {
-	ID        int64
-	UserID    int64
-	ChatID    int64
-	Store     string
-	Query     string
-	Category  string
-	City      string
-	MinPrice  sql.NullString
-	MaxPrice  sql.NullString
-	Enabled   int64
-	CreatedAt string
-	UpdatedAt string
-}
-
-func ruleRowFromList(r ListRulesByUserRow) ruleRow {
-	return ruleRow(r)
-}
-
-func ruleRowFromEnabled(r ListEnabledRulesRow) ruleRow {
-	return ruleRow(r)
-}
-
-func ruleRowFromGet(r GetRuleRow) ruleRow {
-	return ruleRow(r)
-}
-
-func toRuleRow(r ruleRow) models.Rule {
+func toRule(r Rule) models.Rule {
 	return models.Rule{
-		ID:        r.ID,
-		UserID:    r.UserID,
-		ChatID:    r.ChatID,
-		Store:     r.Store,
-		Query:     r.Query,
-		Category:  r.Category,
-		City:      r.City,
-		MinPrice:  toDec(r.MinPrice),
-		MaxPrice:  toDec(r.MaxPrice),
-		Enabled:   r.Enabled == 1,
-		CreatedAt: timeParse(r.CreatedAt),
-		UpdatedAt: timeParse(r.UpdatedAt),
+		ID:       r.ID,
+		UserID:   r.UserID,
+		ChatID:   r.ChatID,
+		Store:    r.Store,
+		Query:    r.Query,
+		Category: r.Category,
+		City:     r.City,
+		MinPrice: toDec(r.MinPrice),
+		MaxPrice: toDec(r.MaxPrice),
+		Enabled:  r.Enabled == 1,
 	}
 }
 

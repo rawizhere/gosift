@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"sort"
 	"strings"
 	"time"
@@ -12,7 +13,6 @@ import (
 
 	"github.com/rawizhere/gosift/internal/config"
 	"github.com/rawizhere/gosift/internal/models"
-	"github.com/rawizhere/gosift/internal/randutil"
 	"github.com/rawizhere/gosift/internal/repo"
 )
 
@@ -45,12 +45,28 @@ func NewEngine(store *repo.Store, registry Registry, sender Sender, cfg *config.
 	}
 }
 
+// Run parses every ParseInterval after a random start delay, until ctx is done.
+func (e *Engine) Run(ctx context.Context) error {
+	e.jitterSleep(ctx)
+	t := time.NewTicker(e.cfg.ParseInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-t.C:
+			if err := e.RunOnce(ctx); err != nil {
+				e.log.Error("parse cycle failed", "error", err)
+			}
+		}
+	}
+}
+
 func (e *Engine) RunOnce(ctx context.Context) error {
 	rules, err := e.repo.ListEnabledRules(ctx)
 	if err != nil {
 		return fmt.Errorf("list rules: %w", err)
 	}
-	seen := map[string]bool{}
 	parsed, sent := 0, 0
 	for _, rule := range rules {
 		e.jitterSleep(ctx)
@@ -62,21 +78,9 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 		e.log.Debug("rule parsed", "rule", rule.ID, "store", rule.Store, "offers", len(offers))
 		parsed += len(offers)
 		e.fails[alertKey(rule)] = 0
-		unique := make([]models.Offer, 0, len(offers))
-		for _, o := range offers {
-			key := fmt.Sprintf("%d|%s", rule.ChatID, offerKey(o))
-			if seen[key] {
-				continue
-			}
-			seen[key] = true
-			unique = append(unique, o)
-		}
-		if len(unique) == 0 {
-			continue
-		}
 		// Persistent dedup: send only new listings and price drops.
-		toSend := make([]models.Offer, 0, len(unique))
-		for _, o := range unique {
+		toSend := make([]models.Offer, 0, len(offers))
+		for _, o := range offers {
 			should, err := e.repo.ShouldNotifyOffer(ctx, rule.ChatID, offerKey(o), o.Price.String())
 			if err != nil {
 				e.log.Error("dedup check failed", "rule", rule.ID, "chat", rule.ChatID, "offer", offerKey(o), "error", err)
@@ -89,7 +93,6 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 		if len(toSend) == 0 {
 			continue
 		}
-		sortOffers(toSend)
 		if err := e.sender.SendCards(ctx, rule.ChatID, toSend); err != nil {
 			e.log.Error("send cards", "chat", rule.ChatID, "error", err)
 			continue
@@ -202,7 +205,7 @@ func (e *Engine) jitterSleep(ctx context.Context) {
 	if e.cfg.ParseJitter <= 0 {
 		return
 	}
-	timer := time.NewTimer(randutil.Duration(e.cfg.ParseJitter))
+	timer := time.NewTimer(rand.N(e.cfg.ParseJitter))
 	defer timer.Stop()
 	select {
 	case <-ctx.Done():

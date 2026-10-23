@@ -21,7 +21,6 @@ import (
 	"golang.org/x/time/rate"
 
 	"github.com/rawizhere/gosift/internal/config"
-	"github.com/rawizhere/gosift/internal/randutil"
 )
 
 // maxImageBytes caps a single downloaded image.
@@ -91,17 +90,7 @@ func (rt roundTripper) RoundTrip(req *nethttp.Request) (*nethttp.Response, error
 // New creates a client with a random browser fingerprint, optional proxy and per-store rate limiting.
 func New(cfg *config.Config, log *slog.Logger) (*Client, error) {
 	fp := pickFingerprint()
-	opts := []tls_client.HttpClientOption{
-		tls_client.WithClientProfile(fp.profile),
-		tls_client.WithCookieJar(tls_client.NewCookieJar()),
-	}
-	if cfg.ParseTimeout > 0 {
-		opts = append(opts, tls_client.WithTimeoutSeconds(int(cfg.ParseTimeout.Seconds())+1))
-	}
-	if cfg.HTTPProxy != "" {
-		opts = append(opts, tls_client.WithProxyUrl(cfg.HTTPProxy))
-	}
-	tc, err := tls_client.NewHttpClient(tls_client.NewNoopLogger(), opts...)
+	tc, err := newTLS(cfg, fp)
 	if err != nil {
 		return nil, fmt.Errorf("tls client: %w", err)
 	}
@@ -109,23 +98,28 @@ func New(cfg *config.Config, log *slog.Logger) (*Client, error) {
 	return c, nil
 }
 
+// newTLS builds an impersonation client for the fingerprint with a fresh cookie jar.
+func newTLS(cfg *config.Config, fp fingerprint) (tls_client.HttpClient, error) {
+	opts := []tls_client.HttpClientOption{
+		tls_client.WithClientProfile(fp.profile),
+		tls_client.WithCookieJar(tls_client.NewCookieJar()),
+		tls_client.WithTimeoutSeconds(int(cfg.ParseTimeout.Seconds()) + 1),
+	}
+	if cfg.HTTPProxy != "" {
+		opts = append(opts, tls_client.WithProxyUrl(cfg.HTTPProxy))
+	}
+	return tls_client.NewHttpClient(tls_client.NewNoopLogger(), opts...)
+}
+
 // StandardClient returns a plain http.Client for the Telegram API without per-store rate limiting.
 func (c *Client) StandardClient() *nethttp.Client {
-	timeout := c.cfg.ParseTimeout
-	if timeout <= 0 {
-		timeout = 30 * time.Second
-	}
-	return &nethttp.Client{Transport: roundTripper{c: c}, Timeout: timeout}
+	return &nethttp.Client{Transport: roundTripper{c: c}, Timeout: c.cfg.ParseTimeout}
 }
 
 func (c *Client) limiter(store string) *rate.Limiter {
 	l, ok := c.limit[store]
 	if !ok {
-		rps := c.cfg.StoreRPS
-		if rps <= 0 {
-			rps = 0.5
-		}
-		l = rate.NewLimiter(rate.Limit(rps), 1)
+		l = rate.NewLimiter(rate.Limit(c.cfg.StoreRPS), 1)
 		c.limit[store] = l
 	}
 	return l
@@ -133,30 +127,16 @@ func (c *Client) limiter(store string) *rate.Limiter {
 
 // maybeRotate switches to a fresh fingerprint once the current one outlives the parse interval.
 func (c *Client) maybeRotate() {
-	rotateEvery := c.cfg.ParseInterval
-	if rotateEvery <= 0 {
-		rotateEvery = 15 * time.Minute
-	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if time.Since(c.rotatedAt) < rotateEvery {
+	if time.Since(c.rotatedAt) < c.cfg.ParseInterval {
 		return
 	}
 	fp := pickFingerprint()
 	for fp.name == c.fp.name {
 		fp = pickFingerprint()
 	}
-	opts := []tls_client.HttpClientOption{
-		tls_client.WithClientProfile(fp.profile),
-		tls_client.WithCookieJar(tls_client.NewCookieJar()),
-	}
-	if c.cfg.ParseTimeout > 0 {
-		opts = append(opts, tls_client.WithTimeoutSeconds(int(c.cfg.ParseTimeout.Seconds())+1))
-	}
-	if c.cfg.HTTPProxy != "" {
-		opts = append(opts, tls_client.WithProxyUrl(c.cfg.HTTPProxy))
-	}
-	tc, err := tls_client.NewHttpClient(tls_client.NewNoopLogger(), opts...)
+	tc, err := newTLS(c.cfg, fp)
 	if err != nil {
 		return // keep the current fingerprint on rebuild failure
 	}
@@ -180,15 +160,12 @@ func shouldRetry(status int, retryNotFound bool) bool {
 // backoff returns the wait before the given retry attempt.
 func (c *Client) backoff(attempt int) time.Duration {
 	floor := c.cfg.ParseRetryBackoff
-	if floor <= 0 {
-		floor = 5 * time.Second
-	}
 	ceil := 5 * floor
 	wait := floor << attempt
 	if wait > ceil || wait <= 0 {
 		wait = ceil
 	}
-	return wait + randutil.Duration(wait)
+	return wait + rand.N(wait)
 }
 
 // Do sends the request with per-store rate limiting and retries on transport errors, 404, 429 and 5xx except 501.
@@ -203,9 +180,6 @@ func (c *Client) Do(ctx context.Context, req *nethttp.Request, store string) (*n
 // doWithRetries sends the request up to ParseRetries+1 times, recycling connections between attempts.
 func (c *Client) doWithRetries(ctx context.Context, req *nethttp.Request, retryNotFound bool) (*nethttp.Response, error) {
 	retries := c.cfg.ParseRetries
-	if retries <= 0 {
-		retries = 3
-	}
 	var resp *nethttp.Response
 	var err error
 	for attempt := 0; ; attempt++ {

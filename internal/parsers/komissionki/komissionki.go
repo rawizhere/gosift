@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/shopspring/decimal"
 
@@ -27,10 +26,9 @@ type apiResponse struct {
 }
 
 type apiData struct {
-	Filters []json.RawMessage `json:"filters"`
-	Items   []apiItem         `json:"data"`
-	SA      string            `json:"sa"`
-	Total   int               `json:"total"`
+	Items []apiItem `json:"data"`
+	SA    string    `json:"sa"`
+	Total int       `json:"total"`
 }
 
 type apiItem struct {
@@ -42,7 +40,6 @@ type apiItem struct {
 	Price           json.Number  `json:"price"`
 	OldPrice        *json.Number `json:"oldPrice"`
 	City            []apiCity    `json:"city"`
-	Filial          []apiFilial  `json:"filial"`
 	Category        apiCategory  `json:"category"`
 	ParentCategory  apiCategory  `json:"parentCategory"`
 	// PhotosResized maps photo IDs to gallery positions.
@@ -51,10 +48,6 @@ type apiItem struct {
 
 type apiCity struct {
 	Name string `json:"name"`
-}
-
-type apiFilial struct {
-	Balance int `json:"balance"`
 }
 
 type apiCategory struct {
@@ -226,13 +219,6 @@ func offersFromItems(baseURL, cdnURL string, items []apiItem, limit int) []model
 }
 
 func toOffer(baseURL, cdnURL string, item apiItem) models.Offer {
-	available := false
-	for _, f := range item.Filial {
-		if f.Balance > 0 {
-			available = true
-			break
-		}
-	}
 	city := ""
 	if len(item.City) > 0 {
 		city = item.City[0].Name
@@ -262,9 +248,7 @@ func toOffer(baseURL, cdnURL string, item apiItem) models.Offer {
 		Price:       price,
 		OldPrice:    oldPrice,
 		City:        strings.TrimSpace(city),
-		Available:   available,
 		Images:      imageURLs(cdnURL, item.PhotosResized),
-		ParsedAt:    time.Now(),
 	}
 }
 

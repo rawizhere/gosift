@@ -20,6 +20,7 @@ Telegram bot for monitoring retail and secondary market listings with price drop
 cp .env.example .env
 # Set your TELEGRAM_BOT_TOKEN in .env
 
+set -a; . ./.env; set +a
 go run ./cmd/app
 ```
 

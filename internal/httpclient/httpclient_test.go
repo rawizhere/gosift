@@ -13,7 +13,7 @@ import (
 
 func newTestClient(t *testing.T, retries int) *Client {
 	t.Helper()
-	cfg := &config.Config{ParseRetries: retries, ParseRetryBackoff: time.Millisecond, StoreRPS: 1000}
+	cfg := &config.Config{ParseRetries: retries, ParseRetryBackoff: time.Millisecond, ParseInterval: time.Hour, ParseTimeout: 5 * time.Second, StoreRPS: 1000}
 	c, err := New(cfg, slog.Default())
 	if err != nil {
 		t.Fatalf("new client: %v", err)

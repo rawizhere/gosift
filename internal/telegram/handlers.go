@@ -41,7 +41,7 @@ func (b *Bot) handleCommand(ctx context.Context, msg *telego.Message, text strin
 	case "/add":
 		b.cmdAdd(ctx, msg)
 	case "/edit":
-		b.cmdEdit(ctx, msg, arg)
+		b.cmdEdit(ctx, msg)
 	case "/remove":
 		b.cmdRemove(ctx, msg, arg)
 	case "/on", "/off":

@@ -1,24 +1,18 @@
 package models
 
-import (
-	"time"
-
-	"github.com/shopspring/decimal"
-)
+import "github.com/shopspring/decimal"
 
 type Rule struct {
-	ID        int64
-	UserID    int64
-	ChatID    int64
-	Store     string
-	Query     string
-	Category  string
-	City      string
-	MinPrice  *decimal.Decimal
-	MaxPrice  *decimal.Decimal
-	Enabled   bool
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID       int64
+	UserID   int64
+	ChatID   int64
+	Store    string
+	Query    string
+	Category string
+	City     string
+	MinPrice *decimal.Decimal
+	MaxPrice *decimal.Decimal
+	Enabled  bool
 }
 
 type Offer struct {
@@ -31,9 +25,7 @@ type Offer struct {
 	Price       decimal.Decimal
 	OldPrice    *decimal.Decimal
 	City        string
-	Available   bool
 	Images      []string
-	ParsedAt    time.Time
 }
 
 type User struct {
@@ -41,7 +33,6 @@ type User struct {
 	Username  string
 	FirstName string
 	ChatID    int64
-	CreatedAt time.Time
 }
 
 // Category is a store category node; ParentExtCode links a child to its parent.

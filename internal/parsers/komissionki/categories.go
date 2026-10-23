@@ -13,10 +13,8 @@ import (
 type apiCategoryListItem struct {
 	ID            int64  `json:"id"`
 	Title         string `json:"title"`
-	Code          string `json:"code"`
 	ExtCode       string `json:"extCode"`
 	ParentExtCode string `json:"parentExtCode"`
-	CountProduct  int    `json:"countProduct"`
 }
 
 type apiCategoriesResponse struct {

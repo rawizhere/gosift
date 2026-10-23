@@ -6,7 +6,6 @@ require (
 	github.com/bogdanfinn/fhttp v0.6.9
 	github.com/bogdanfinn/tls-client v1.16.0
 	github.com/caarlos0/env/v11 v11.4.1
-	github.com/joho/godotenv v1.5.1
 	github.com/mymmrac/telego v1.12.1
 	github.com/pressly/goose/v3 v3.28.0
 	github.com/shopspring/decimal v1.4.0

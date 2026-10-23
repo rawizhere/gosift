@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -13,11 +14,9 @@ import (
 	"github.com/rawizhere/gosift/internal/config"
 	"github.com/rawizhere/gosift/internal/db"
 	"github.com/rawizhere/gosift/internal/httpclient"
-	"github.com/rawizhere/gosift/internal/logger"
 	"github.com/rawizhere/gosift/internal/parser"
 	"github.com/rawizhere/gosift/internal/parsers/komissionki"
 	"github.com/rawizhere/gosift/internal/repo"
-	"github.com/rawizhere/gosift/internal/scheduler"
 	"github.com/rawizhere/gosift/internal/telegram"
 )
 
@@ -33,7 +32,12 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	log := logger.New(cfg)
+	opts := &slog.HandlerOptions{Level: cfg.LogLevel}
+	handler := slog.Handler(slog.NewTextHandler(os.Stdout, opts))
+	if cfg.LogFormat == "json" {
+		handler = slog.NewJSONHandler(os.Stdout, opts)
+	}
+	log := slog.New(handler)
 	sqlDB, err := db.Open(cfg.DBPath)
 	if err != nil {
 		return err
@@ -50,7 +54,7 @@ func run() error {
 		p := komissionki.New(hc, cfg.StoreBaseURL, cfg.StoreAPIURL, cfg.StoreCDNURL)
 		registry[p.Name()] = p
 	}
-	bot, err := telegram.New(cfg, store, registry, log, hc, registry.Names())
+	bot, err := telegram.New(cfg, store, registry, log, hc)
 	if err != nil {
 		return err
 	}
@@ -63,11 +67,7 @@ func run() error {
 
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
-		return scheduler.Run(ctx, cfg.ParseInterval, cfg.ParseJitter, func() {
-			if err := engine.RunOnce(ctx); err != nil {
-				log.Error("parse cycle failed", "error", err)
-			}
-		})
+		return engine.Run(ctx)
 	})
 	g.Go(func() error {
 		return bot.Run(ctx)
